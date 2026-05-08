@@ -11,9 +11,11 @@ import { IngestScreen } from "./screens/IngestScreen";
 import { DebugScreen } from "./screens/DebugScreen";
 import { PerformanceSetupScreen } from "./screens/PerformanceSetupScreen";
 import { PerformanceScreen } from "./screens/PerformanceScreen";
+import { SceneBriefScreen } from "./screens/SceneBriefScreen";
+import { ProductionPlanScreen } from "./screens/ProductionPlanScreen";
 import { BtsScreen } from "./screens/BtsScreen";
 import { BackgroundProvider, useBackground } from "./context/BackgroundContext";
-import type { Work, Session, PerformanceSession } from "@/lib/storage";
+import type { Work, Session, PerformanceSession, ProductionPlan } from "@/lib/storage";
 
 type Screen =
   | { name: "home" }
@@ -27,6 +29,8 @@ type Screen =
   | { name: "ingest" }
   | { name: "debug" }
   | { name: "performance-setup"; work: Work }
+  | { name: "scene-brief"; work: Work; session: PerformanceSession }
+  | { name: "production-plan"; work: Work; session: PerformanceSession; plan: ProductionPlan }
   | { name: "performance"; work: Work; session: PerformanceSession }
   | { name: "bts"; work: Work; performanceSession: PerformanceSession };
 
@@ -38,6 +42,8 @@ function getWorkId(s: Screen): string | undefined {
     case "characters":
     case "character-edit":
     case "performance-setup":
+    case "scene-brief":
+    case "production-plan":
     case "performance":
     case "bts":
       return s.work.id;
@@ -97,8 +103,31 @@ function AppContent() {
         <PerformanceSetupScreen
           work={screen.work}
           onBack={() => setScreen({ name: "work", work: screen.work })}
-          onStart={session => setScreen({ name: "performance", work: screen.work, session })}
+          onStart={session => setScreen({ name: "scene-brief", work: screen.work, session })}
           onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
+        />
+      );
+    }
+    if (screen.name === "scene-brief") {
+      return (
+        <SceneBriefScreen
+          work={screen.work}
+          session={screen.session}
+          onBack={() => setScreen({ name: "performance-setup", work: screen.work })}
+          onPlanReady={(plan, updatedSession) =>
+            setScreen({ name: "production-plan", work: screen.work, session: updatedSession, plan })
+          }
+        />
+      );
+    }
+    if (screen.name === "production-plan") {
+      return (
+        <ProductionPlanScreen
+          work={screen.work}
+          session={screen.session}
+          plan={screen.plan}
+          onBack={() => setScreen({ name: "scene-brief", work: screen.work, session: screen.session })}
+          onStart={() => setScreen({ name: "performance", work: screen.work, session: screen.session })}
         />
       );
     }

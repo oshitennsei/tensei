@@ -7,7 +7,7 @@ import type {
   CacheSubagent, AuthorizationLocal,
   PerformanceTemplate, PerformerSkill, PerformanceSession,
   PerformanceSceneExtended, BtsSession, CommunityThirdPartySource,
-  WorkGlossary,
+  WorkGlossary, ProductionPlan,
 } from "./types";
 
 class TenseiDb extends Dexie {
@@ -34,6 +34,7 @@ class TenseiDb extends Dexie {
   community_third_party_sources!: EntityTable<CommunityThirdPartySource, "source_url">;
   app_settings!: EntityTable<AppSettings, "id">;
   work_glossaries!: EntityTable<WorkGlossary, "id">;
+  production_plans!: EntityTable<ProductionPlan, "id">;
 
   constructor() {
     super("tensei");
@@ -111,6 +112,10 @@ class TenseiDb extends Dexie {
     });
 
     this.version(5).stores({ work_glossaries: "&id, work_id" });
+
+    this.version(6).stores({
+      production_plans: "&id, performance_session_id",
+    });
   }
 }
 

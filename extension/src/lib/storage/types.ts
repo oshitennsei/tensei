@@ -9,6 +9,7 @@ export type AuthorizationStatus = "active" | "suspended" | "revoked";
 export type EntityType = "character" | "item" | "location" | "concept" | "organization";
 export type TimelineAxis = "chronological" | "narrative" | "character";
 export type Canonicity = "re_enactment" | "extension" | "speculation" | "alternate";
+export type SceneBasis = "chapter" | "post_story" | "spinoff" | "virtual";
 
 // ─── Core content stores ─────────────────────────────────────────────────────
 
@@ -385,6 +386,7 @@ export interface PerformanceSession {
   generated_content: GeneratedSegment[];
   created_at: number;
   last_active: number;
+  production_plan_id?: string;
 }
 
 export interface SceneBlocking {
@@ -439,4 +441,31 @@ export interface CommunityThirdPartySource {
   loaded_at: number;
   last_used: number;
   user_acknowledged_warning: boolean;
+}
+
+export interface SceneBeat {
+  order: number;
+  description: string;
+}
+
+export interface ProductionPlan {
+  id: string;
+  performance_session_id: string;
+  created_at: number;
+  // 5W1H
+  who: string[];           // character canonical names
+  where: string;
+  when: string;
+  what: string;
+  why: string;
+  how: string;
+  // Extended
+  props: string[];
+  tone_tags: string[];
+  beats: SceneBeat[];
+  scene_basis: SceneBasis;
+  reference_chapter?: number;
+  canonicity: Canonicity;
+  user_notes?: string;
+  locked_plan_fields?: Array<"who" | "where" | "when" | "what" | "why" | "how" | "props" | "tone_tags" | "beats">;
 }

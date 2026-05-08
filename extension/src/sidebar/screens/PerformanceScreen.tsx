@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "../components/Button";
-import { generateNextScene, appendSegment } from "@/lib/performance";
+import { generateNextScene, appendSegment, getPlanForSession } from "@/lib/performance";
 import { LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
-import type { Work, PerformanceSession, Entity } from "@/lib/storage";
+import type { Work, PerformanceSession, Entity, ProductionPlan } from "@/lib/storage";
 
 interface Props {
   work: Work;
@@ -18,6 +18,7 @@ export function PerformanceScreen({ work, session, onBack, onGoBackstage }: Prop
   const [generating, setGenerating] = useState(false);
   const [direction, setDirection] = useState("");
   const [characters, setCharacters] = useState<Entity[]>([]);
+  const [plan, setPlan] = useState<ProductionPlan | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -25,11 +26,15 @@ export function PerformanceScreen({ work, session, onBack, onGoBackstage }: Prop
   useEffect(() => {
     const load = async () => {
       const ids = localSession.characters_in_scene;
-      const chars = await Promise.all(ids.map(id => db.entities.get(id)));
+      const [chars, loadedPlan] = await Promise.all([
+        Promise.all(ids.map(id => db.entities.get(id))),
+        getPlanForSession(localSession.id),
+      ]);
       setCharacters(chars.filter((c): c is Entity => c !== undefined));
+      setPlan(loadedPlan);
     };
     load();
-  }, [localSession.characters_in_scene.join(",")]);
+  }, [localSession.id]);
 
   const handleGenerate = async () => {
     if (generating) return;
@@ -41,7 +46,7 @@ export function PerformanceScreen({ work, session, onBack, onGoBackstage }: Prop
     let accumulated = "";
 
     try {
-      for await (const delta of generateNextScene(localSession, direction, abortRef.current.signal)) {
+      for await (const delta of generateNextScene(localSession, direction, abortRef.current.signal, plan)) {
         accumulated += delta;
         setStreamingContent(accumulated);
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });

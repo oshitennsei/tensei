@@ -2,6 +2,7 @@ import { LlmClient, LlmError } from "@/lib/llm";
 import type { ChatMessage } from "@/lib/llm";
 import { db } from "@/lib/storage";
 import type { PerformanceSession, PerformanceMode, ImprovSetting, GeneratedSegment } from "@/lib/storage";
+import type { ProductionPlan, SceneBasis } from "@/lib/storage";
 
 export async function createPerformanceSession(
   work_id: string,
@@ -32,6 +33,7 @@ export async function* generateNextScene(
   session: PerformanceSession,
   direction: string,
   signal?: AbortSignal,
+  plan?: ProductionPlan,
 ): AsyncGenerator<string> {
   // 1. Load work
   const work = await db.works.get(session.work_id);
@@ -94,6 +96,23 @@ export async function* generateNextScene(
       break;
   }
 
+  // Inject production plan if available
+  if (plan) {
+    const beatIndex = session.scene_progress;
+    const currentBeat = plan.beats[beatIndex] ?? plan.beats[plan.beats.length - 1];
+    const planLines = [
+      `演出計画:`,
+      `  場所: ${plan.where}`,
+      `  時間: ${plan.when}`,
+      `  概要: ${plan.what}`,
+      `  背景: ${plan.why}`,
+      `  トーン: ${plan.tone_tags.join('、')}`,
+    ];
+    if (plan.props.length > 0) planLines.push(`  道具: ${plan.props.join('、')}`);
+    if (currentBeat) planLines.push(`  現在の幕: ビート${beatIndex + 1}/${plan.beats.length} — ${currentBeat.description}`);
+    systemParts.push(planLines.join("\n"));
+  }
+
   // Format
   systemParts.push("脚本形式（キャラクター名: セリフ / ト書き）で出力してください。800字以内。");
 
@@ -126,8 +145,11 @@ export async function* generateNextScene(
       if (chunk.delta) yield chunk.delta;
     }
   } finally {
-    // 9. Update last_active
-    await db.performance_sessions.update(session.id, { last_active: Date.now() });
+    const updates: Partial<PerformanceSession> = { last_active: Date.now() };
+    if (plan && session.scene_progress < plan.beats.length - 1) {
+      updates.scene_progress = session.scene_progress + 1;
+    }
+    await db.performance_sessions.update(session.id, updates);
   }
 }
 
@@ -162,4 +184,118 @@ export async function listPerformanceSessions(work_id: string): Promise<Performa
 
 export async function deletePerformanceSession(id: string): Promise<void> {
   await db.performance_sessions.delete(id);
+}
+
+export async function generatePlan(
+  session: PerformanceSession,
+  scene_basis: SceneBasis,
+  user_description: string,
+  reference_chapter?: number,
+): Promise<{ plan: ProductionPlan; session: PerformanceSession }> {
+  // 1. Load work
+  const work = await db.works.get(session.work_id);
+
+  // 2. Load entities, filter nulls
+  const rawEntities = await db.entities.bulkGet(session.characters_in_scene);
+  const entities = rawEntities.filter((e): e is NonNullable<typeof e> => e != null);
+
+  // 3. Optionally load reference chapter summary
+  let chapterSummary: string | undefined;
+  if (reference_chapter != null) {
+    const chapter = await db.chapters
+      .where("work_id")
+      .equals(session.work_id)
+      .filter(c => c.chapter_number === reference_chapter)
+      .first();
+    chapterSummary = chapter?.summary_short;
+  }
+
+  // 4. Build LLM prompt
+  const entityNames = entities.map(e => e.canonical_name).join("、");
+  const refLine = chapterSummary ? `\n参照章概要: ${chapterSummary}` : "";
+  const promptText =
+    `以下の情報をもとに演出計画をJSONで生成してください。\n\n` +
+    `作品: ${work?.title ?? session.work_id}\n` +
+    `出演: ${entityNames}${refLine}\n` +
+    `場面の説明: ${user_description}\n\n` +
+    `JSON形式で返してください（説明不要、JSONのみ）:\n` +
+    `{\n` +
+    `  "who": ["キャラクター名"],\n` +
+    `  "where": "場所と状況",\n` +
+    `  "when": "時間帯や時期",\n` +
+    `  "what": "この場面で起きることの一文要約",\n` +
+    `  "why": "背景・動機",\n` +
+    `  "how": "演出のトーンや手法",\n` +
+    `  "props": ["道具1", "道具2"],\n` +
+    `  "tone_tags": ["緊張", "疑惑"],\n` +
+    `  "beats": [\n` +
+    `    {"order": 1, "description": "最初に起きること"},\n` +
+    `    {"order": 2, "description": "次の展開"},\n` +
+    `    {"order": 3, "description": "クライマックス"}\n` +
+    `  ],\n` +
+    `  "canonicity": "re_enactment" | "extension" | "speculation" | "alternate"\n` +
+    `}\n` +
+    `beats は3〜5項目。日本語で出力。`;
+
+  const messages: ChatMessage[] = [
+    { role: "user", content: promptText },
+  ];
+
+  // 5. Get LLM client: prefer sub_agent, fall back to main
+  let client = await LlmClient.forRole("sub_agent");
+  if (!client) client = await LlmClient.forRole("main");
+  if (!client) throw new LlmError(0, "LLMが設定されていません。");
+
+  // 6. Call complete (full JSON)
+  const raw = await client.complete(messages);
+
+  // 7. Parse JSON; build fallback on error
+  type PlanBody = Omit<ProductionPlan, "id" | "performance_session_id" | "created_at" | "scene_basis" | "reference_chapter">;
+  let parsed: PlanBody;
+  try {
+    // Strip markdown code fences if present
+    const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    parsed = JSON.parse(jsonText) as PlanBody;
+  } catch {
+    const fallback: PlanBody = {
+      who: entities.map(e => e.canonical_name),
+      where: "未指定",
+      when: "未指定",
+      what: user_description.slice(0, 80),
+      why: "",
+      how: "脚本形式",
+      props: [],
+      tone_tags: [],
+      beats: [{ order: 1, description: "場面を開始する" }],
+      canonicity: "extension",
+    };
+    parsed = fallback;
+  }
+
+  // 8. Build plan object
+  const plan: ProductionPlan = {
+    id: crypto.randomUUID(),
+    performance_session_id: session.id,
+    created_at: Date.now(),
+    scene_basis,
+    reference_chapter,
+    ...parsed,
+  };
+
+  // 9. Save plan
+  await db.production_plans.add(plan);
+
+  // 10. Update session with plan id
+  await db.performance_sessions.update(session.id, { production_plan_id: plan.id });
+
+  // 11. Return
+  return { plan, session: { ...session, production_plan_id: plan.id } };
+}
+
+export async function updatePlan(plan_id: string, updates: Partial<ProductionPlan>): Promise<void> {
+  await db.production_plans.update(plan_id, updates);
+}
+
+export async function getPlanForSession(session_id: string): Promise<ProductionPlan | undefined> {
+  return db.production_plans.where("performance_session_id").equals(session_id).first();
 }
