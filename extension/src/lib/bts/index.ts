@@ -100,6 +100,15 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
   return skill;
 }
 
+export async function regenerateSkill(character_id: string, work_id: string): Promise<PerformerSkill> {
+  await db.performer_skills.delete(character_id);
+  return getOrCreateSkill(character_id, work_id);
+}
+
+export async function saveSkillField(character_id: string, updates: Partial<PerformerSkill>): Promise<void> {
+  await db.performer_skills.update(character_id, updates);
+}
+
 export async function generateBtsSetup(
   performanceSession: PerformanceSession,
   description: string,

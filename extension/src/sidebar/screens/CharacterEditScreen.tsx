@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "../components/Button";
 import { db } from "@/lib/storage";
-import type { Work, Entity, CharacterExtended, CharacterStateSnapshot, LockedField, VoiceSample } from "@/lib/storage";
+import type { Work, Entity, CharacterExtended, CharacterStateSnapshot, LockedField, VoiceSample, PerformerSkill } from "@/lib/storage";
+import { getOrCreateSkill, regenerateSkill, saveSkillField } from "@/lib/bts";
 
 interface Props {
   work: Work;
@@ -57,7 +58,14 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
   const [snapshots, setSnapshots] = useState<CharacterStateSnapshot[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"basic" | "limits" | "versions">("basic");
+  const [activeTab, setActiveTab] = useState<"basic" | "limits" | "versions" | "performer">("basic");
+
+  // Performer skill state
+  const [skill, setSkill] = useState<PerformerSkill | null>(null);
+  const [skillLoading, setSkillLoading] = useState(false);
+  const [skillGenerating, setSkillGenerating] = useState(false);
+  const [newQuirk, setNewQuirk] = useState("");
+  const [newInterest, setNewInterest] = useState("");
 
   // For snapshot editing
   const [editingSnap, setEditingSnap] = useState<CharacterStateSnapshot | null>(null);
@@ -84,6 +92,78 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
       }
     })();
   }, [character_id]);
+
+  useEffect(() => {
+    if (activeTab !== "performer" || !character_id) return;
+    setSkillLoading(true);
+    db.performer_skills.get(character_id).then(s => {
+      setSkill(s ?? null);
+      setSkillLoading(false);
+    });
+  }, [activeTab, character_id]);
+
+  const handleGenerateSkill = async () => {
+    if (!character_id) return;
+    setSkillGenerating(true);
+    try {
+      const s = await getOrCreateSkill(character_id, work.id);
+      setSkill(s);
+    } finally {
+      setSkillGenerating(false);
+    }
+  };
+
+  const handleRegenerateSkill = async () => {
+    if (!character_id) return;
+    setSkillGenerating(true);
+    try {
+      const s = await regenerateSkill(character_id, work.id);
+      setSkill(s);
+    } finally {
+      setSkillGenerating(false);
+    }
+  };
+
+  const updateSkillLocal = (updates: Partial<PerformerSkill>) => {
+    setSkill(prev => prev ? { ...prev, ...updates } : prev);
+  };
+
+  const persistSkill = async (updates: Partial<PerformerSkill>) => {
+    if (!character_id) return;
+    await saveSkillField(character_id, updates);
+  };
+
+  const addQuirk = async () => {
+    if (!skill || !newQuirk.trim()) return;
+    const quirks = [...skill.off_set_persona.quirks, newQuirk.trim()];
+    const off_set_persona = { ...skill.off_set_persona, quirks };
+    updateSkillLocal({ off_set_persona });
+    await persistSkill({ off_set_persona });
+    setNewQuirk("");
+  };
+
+  const removeQuirk = async (i: number) => {
+    if (!skill) return;
+    const quirks = skill.off_set_persona.quirks.filter((_, idx) => idx !== i);
+    const off_set_persona = { ...skill.off_set_persona, quirks };
+    updateSkillLocal({ off_set_persona });
+    await persistSkill({ off_set_persona });
+  };
+
+  const addInterest = async () => {
+    if (!skill || !newInterest.trim()) return;
+    const off_set_interests = [...skill.off_set_interests, newInterest.trim()];
+    updateSkillLocal({ off_set_interests });
+    await persistSkill({ off_set_interests });
+    setNewInterest("");
+  };
+
+  const removeInterest = async (i: number) => {
+    if (!skill) return;
+    const off_set_interests = skill.off_set_interests.filter((_, idx) => idx !== i);
+    updateSkillLocal({ off_set_interests });
+    await persistSkill({ off_set_interests });
+  };
 
   const toggleLock = (field: LockedField) => {
     setLockedFields(prev =>
@@ -223,13 +303,13 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
 
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 shrink-0 text-xs">
-        {(["basic", "limits", "versions"] as const).map(tab => (
+        {(["basic", "limits", "versions", ...(character_id ? ["performer"] : [])] as const).map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => setActiveTab(tab as typeof activeTab)}
             className={`flex-1 py-2 ${activeTab === tab ? "border-b-2 border-indigo-500 text-indigo-700 font-medium" : "text-gray-500 hover:text-gray-700"}`}
           >
-            {tab === "basic" ? "基本・ペルソナ" : tab === "limits" ? "制限" : "成長・変化"}
+            {tab === "basic" ? "基本・ペルソナ" : tab === "limits" ? "制限" : tab === "versions" ? "成長・変化" : "演者"}
           </button>
         ))}
       </div>
@@ -513,11 +593,117 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
           </>
         )}
 
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {activeTab === "performer" && (
+          <>
+            {skillLoading ? (
+              <p className="text-center text-xs text-gray-400 mt-8">読み込み中...</p>
+            ) : skill === null ? (
+              <div className="text-center mt-8 space-y-3">
+                <p className="text-xs text-gray-400">まだ演者プロフィールが生成されていません。</p>
+                <Button onClick={handleGenerateSkill} disabled={skillGenerating}>
+                  {skillGenerating ? "生成中..." : "AIで生成"}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="bg-gray-50 rounded px-3 py-2 text-xs text-gray-500">
+                  <span className="font-medium text-gray-700">{skill.name}</span>
+                  <span className="ml-2">（{skill.archetype}）</span>
+                </div>
 
-        <Button className="w-full" onClick={handleSave} disabled={saving}>
-          {saving ? "保存中..." : isNew ? "追加" : "保存"}
-        </Button>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">口調・話し方（素）</label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
+                    rows={2}
+                    value={skill.off_set_persona.casual_style}
+                    onChange={e => updateSkillLocal({ off_set_persona: { ...skill.off_set_persona, casual_style: e.target.value } })}
+                    onBlur={() => persistSkill({ off_set_persona: skill.off_set_persona })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">口癖・クセ</label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {skill.off_set_persona.quirks.map((q, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full text-xs">
+                        {q}
+                        <button className="text-gray-400 hover:text-red-500 leading-none" onClick={() => removeQuirk(i)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-1">
+                    <input
+                      className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs"
+                      placeholder="追加... Enter"
+                      value={newQuirk}
+                      onChange={e => setNewQuirk(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addQuirk(); } }}
+                    />
+                    <Button variant="ghost" size="sm" onClick={addQuirk} disabled={!newQuirk.trim()}>追加</Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">趣味・関心</label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {skill.off_set_interests.map((t, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-xs">
+                        {t}
+                        <button className="text-indigo-300 hover:text-red-500 leading-none" onClick={() => removeInterest(i)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-1">
+                    <input
+                      className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs"
+                      placeholder="追加... Enter"
+                      value={newInterest}
+                      onChange={e => setNewInterest(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addInterest(); } }}
+                    />
+                    <Button variant="ghost" size="sm" onClick={addInterest} disabled={!newInterest.trim()}>追加</Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">演技スタイル</label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
+                    rows={2}
+                    value={skill.signature_style.acting_method}
+                    onChange={e => updateSkillLocal({ signature_style: { ...skill.signature_style, acting_method: e.target.value } })}
+                    onBlur={() => persistSkill({ signature_style: skill.signature_style })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">キャラクターとの対比</label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
+                    rows={2}
+                    value={skill.contrast_with_role_hints}
+                    onChange={e => updateSkillLocal({ contrast_with_role_hints: e.target.value })}
+                    onBlur={() => persistSkill({ contrast_with_role_hints: skill.contrast_with_role_hints })}
+                  />
+                </div>
+
+                <Button variant="ghost" className="w-full" onClick={handleRegenerateSkill} disabled={skillGenerating}>
+                  {skillGenerating ? "再生成中..." : "LLMで再生成"}
+                </Button>
+              </>
+            )}
+          </>
+        )}
+
+        {activeTab !== "performer" && (
+          <>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <Button className="w-full" onClick={handleSave} disabled={saving}>
+              {saving ? "保存中..." : isNew ? "追加" : "保存"}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
