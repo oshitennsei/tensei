@@ -1,0 +1,23 @@
+name = "tensei-portal-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tensei-portal"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[kv_namespaces]]
+binding = "MAGIC_LINK_KV"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[vars]
+FRONTEND_URL = "https://tensei-portal.pages.dev"
+GITHUB_REPO_OWNER = "Chakotay-Lee"
+GITHUB_REPO_NAME = "tensei-authors"
+
+# Secrets (set via `wrangler secret put`):
+#   RESEND_API_KEY
+#   GITHUB_TOKEN
+#   ADMIN_SECRET      (for admin endpoints)
