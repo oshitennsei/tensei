@@ -1,8 +1,10 @@
 import { LlmClient, LlmError } from "@/lib/llm";
 import type { ChatMessage } from "@/lib/llm";
 import { db } from "@/lib/storage";
-import type { PerformanceSession, PerformanceMode, ImprovSetting, GeneratedSegment } from "@/lib/storage";
+import type { PerformanceSession, PerformanceMode, ImprovSetting, GeneratedSegment, Chapter } from "@/lib/storage";
 import type { ProductionPlan, SceneBasis } from "@/lib/storage";
+import { retrieveChunks } from "@/lib/retrieval";
+import type { RetrievalResult } from "@/lib/retrieval";
 
 export async function createPerformanceSession(
   work_id: string,
@@ -192,33 +194,88 @@ export async function generatePlan(
   user_description: string,
   reference_chapter?: number,
 ): Promise<{ plan: ProductionPlan; session: PerformanceSession }> {
-  // 1. Load work
+  // 1. Load work + entities
   const work = await db.works.get(session.work_id);
-
-  // 2. Load entities, filter nulls
   const rawEntities = await db.entities.bulkGet(session.characters_in_scene);
   const entities = rawEntities.filter((e): e is NonNullable<typeof e> => e != null);
 
-  // 3. Optionally load reference chapter summary
-  let chapterSummary: string | undefined;
+  // 2. Load reference chapter (with full summary + key events)
+  let refChapter: Chapter | undefined;
   if (reference_chapter != null) {
-    const chapter = await db.chapters
-      .where("work_id")
-      .equals(session.work_id)
+    refChapter = await db.chapters
+      .where("work_id").equals(session.work_id)
       .filter(c => c.chapter_number === reference_chapter)
       .first();
-    chapterSummary = chapter?.summary_short;
   }
 
-  // 4. Build LLM prompt
+  // 3. Determine search cutoff
+  const allChapters = await db.chapters.where("work_id").equals(session.work_id).toArray();
+  const maxChapter = allChapters.length > 0
+    ? Math.max(...allChapters.map(c => c.chapter_number))
+    : 0;
+  const cutoff = reference_chapter ?? maxChapter;
+
+  // 4. Retrieve relevant original text passages
+  // Search query combines user description + character names for maximum relevance
+  const searchQuery = [user_description, ...entities.map(e => e.canonical_name)].join(" ");
+
+  // Retrieve per-character chunks + general query chunks in parallel
+  const chunkResults = await Promise.all([
+    retrieveChunks(session.work_id, searchQuery, cutoff, 5),
+    ...entities.slice(0, 3).map(e =>
+      retrieveChunks(session.work_id, searchQuery, cutoff, 4, e.id)
+    ),
+  ]);
+
+  // Deduplicate
+  const seen = new Set<string>();
+  const deduped: RetrievalResult[] = [];
+  for (const set of chunkResults) {
+    for (const r of set) {
+      if (!seen.has(r.chunk.id)) { seen.add(r.chunk.id); deduped.push(r); }
+    }
+  }
+
+  // Prioritize chunks from the reference chapter, then sort by relevance score
+  const refChunkIds = new Set(refChapter?.chunk_ids ?? []);
+  deduped.sort((a, b) => {
+    const aRef = refChunkIds.has(a.chunk.id) ? 0 : 1;
+    const bRef = refChunkIds.has(b.chunk.id) ? 0 : 1;
+    if (aRef !== bRef) return aRef - bRef;
+    return b.score - a.score;
+  });
+  const topChunks = deduped.slice(0, 8);
+
+  // 5. Build context sections for the prompt
   const entityNames = entities.map(e => e.canonical_name).join("、");
-  const refLine = chapterSummary ? `\n参照章概要: ${chapterSummary}` : "";
+
+  let refChapterSection = "";
+  if (refChapter) {
+    const lines = [`【第${refChapter.chapter_number}章「${refChapter.title}」】`];
+    const summary = refChapter.summary_medium || refChapter.summary_short;
+    if (summary) lines.push(summary);
+    if (refChapter.key_events.length > 0)
+      lines.push("主な出来事:\n" + refChapter.key_events.slice(0, 6).map(e => `・${e}`).join("\n"));
+    refChapterSection = lines.join("\n");
+  }
+
+  let passagesSection = "";
+  if (topChunks.length > 0) {
+    passagesSection =
+      "【関連する原文パッセージ（これらのトーン・セリフ・雰囲気を忠実に演出計画に反映すること）】\n" +
+      topChunks.map(r => `---\n${r.chunk.text}`).join("\n");
+  }
+
+  // 6. Build LLM prompt
   const promptText =
-    `以下の情報をもとに演出計画をJSONで生成してください。\n\n` +
+    `以下の情報をもとに演出計画をJSONで生成してください。\n` +
+    `原文のパッセージを熟読し、作品固有のトーン・雰囲気・人物関係を演出計画に反映してください。\n\n` +
     `作品: ${work?.title ?? session.work_id}\n` +
-    `出演: ${entityNames}${refLine}\n` +
-    `場面の説明: ${user_description}\n\n` +
-    `JSON形式で返してください（説明不要、JSONのみ）:\n` +
+    `出演: ${entityNames}\n` +
+    `場面の説明: ${user_description}\n` +
+    (refChapterSection ? `\n${refChapterSection}\n` : "") +
+    (passagesSection ? `\n${passagesSection}\n` : "") +
+    `\nJSON形式で返してください（説明不要、JSONのみ）:\n` +
     `{\n` +
     `  "who": ["キャラクター名"],\n` +
     `  "where": "場所と状況",\n` +
