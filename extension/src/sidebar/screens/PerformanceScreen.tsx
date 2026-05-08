@@ -121,7 +121,26 @@ export function PerformanceScreen({ work, session, onBack, onGoBackstage }: Prop
       </div>
 
       {/* Direction input */}
-      <div className="border-t border-gray-200 p-3 shrink-0">
+      <div className="border-t border-gray-200 p-3 shrink-0 space-y-2">
+        {/* Crew action bar */}
+        {!generating && (
+          <div className="flex gap-1 flex-wrap">
+            {([
+              { label: "カット！", text: "【監督：カット！もう一度やり直し】" },
+              { label: "道具確認", text: "【道具担当：小道具の確認が必要】" },
+              { label: "音声チェック", text: "【音声：マイクレベル調整、少し待って】" },
+              { label: "監督コメント", text: "【監督コメント：" },
+            ] as const).map(({ label, text }) => (
+              <button
+                key={label}
+                className="px-2 py-0.5 text-xs rounded border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                onClick={() => setDirection(d => d ? d + "\n" + text : text)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
           <textarea
             rows={2}
