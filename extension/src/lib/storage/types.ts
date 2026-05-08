@@ -30,6 +30,8 @@ export interface AppSettings {
   id: string; // always "global"
   background_image?: Blob;
   background_value?: string; // CSS background (color or gradient), used when no image set
+  plan_max_loops?: number;   // default 3; research rounds before forcing plan generation
+  plan_debug_mode?: boolean; // default false; store full research trace in ProductionPlan
 }
 
 export interface Chapter {
@@ -448,6 +450,21 @@ export interface SceneBeat {
   description: string;
 }
 
+export interface ResearchTask {
+  type: "search_passages" | "get_character_profile" | "get_chapter_detail" | "find_co_appearances" | "search_events";
+  label: string;
+  result_count: number;
+  result_preview: string; // first 300 chars of combined results
+}
+
+export interface ResearchRound {
+  round: number;
+  llm_plan: string;       // main LLM's research plan reasoning
+  tasks: ResearchTask[];
+  llm_evaluation: string; // evaluation reasoning
+  sufficient: boolean;
+}
+
 export interface ProductionPlan {
   id: string;
   performance_session_id: string;
@@ -468,4 +485,5 @@ export interface ProductionPlan {
   canonicity: Canonicity;
   user_notes?: string;
   locked_plan_fields?: Array<"who" | "where" | "when" | "what" | "why" | "how" | "props" | "tone_tags" | "beats">;
+  debug_trace?: ResearchRound[]; // only present when plan_debug_mode is enabled
 }

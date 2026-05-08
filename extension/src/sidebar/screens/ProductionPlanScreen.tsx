@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { Button } from "../components/Button";
 import { updatePlan } from "@/lib/performance";
-import type { Work, PerformanceSession, ProductionPlan } from "@/lib/storage";
+import type { Work, PerformanceSession, ProductionPlan, ResearchRound } from "@/lib/storage";
 
 interface Props {
   work: Work;
@@ -283,6 +283,11 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
           />
         </section>
 
+        {/* Debug trace */}
+        {localPlan.debug_trace && localPlan.debug_trace.length > 0 && (
+          <DebugTracePanel rounds={localPlan.debug_trace} />
+        )}
+
       </div>
 
       <div className="border-t border-gray-200 p-4 shrink-0">
@@ -291,5 +296,66 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
         </Button>
       </div>
     </div>
+  );
+}
+
+function DebugTracePanel({ rounds }: { rounds: ResearchRound[] }) {
+  const [open, setOpen] = useState(false);
+  const [openRound, setOpenRound] = useState<number | null>(null);
+
+  return (
+    <section className="border-t border-gray-100 pt-3">
+      <button
+        className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 w-full text-left"
+        onClick={() => setOpen(v => !v)}
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <span>デバッグログ（{rounds.length} ラウンド）</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2 font-mono text-xs">
+          {rounds.map(r => (
+            <div key={r.round} className="border border-gray-100 rounded overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between px-3 py-1.5 bg-gray-50 text-gray-600 hover:bg-gray-100 text-left"
+                onClick={() => setOpenRound(openRound === r.round ? null : r.round)}
+              >
+                <span>Round {r.round} — {r.sufficient ? "✓ 十分" : "→ 補充"}</span>
+                <span className="text-gray-300">{openRound === r.round ? "▾" : "▸"}</span>
+              </button>
+              {openRound === r.round && (
+                <div className="px-3 py-2 space-y-3 bg-white text-gray-600">
+                  {r.llm_plan && (
+                    <div>
+                      <p className="text-gray-400 mb-1">調査計画（LLM）</p>
+                      <p className="whitespace-pre-wrap text-gray-700">{r.llm_plan}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-gray-400 mb-1">実行タスク ({r.tasks.length}件)</p>
+                    <ul className="space-y-1">
+                      {r.tasks.map((t, i) => (
+                        <li key={i} className="border-l-2 border-gray-100 pl-2">
+                          <p className="text-indigo-600">{t.label} → {t.result_count}件</p>
+                          {t.result_preview && (
+                            <p className="text-gray-400 line-clamp-3 whitespace-pre-wrap">{t.result_preview}</p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  {r.llm_evaluation && (
+                    <div>
+                      <p className="text-gray-400 mb-1">評価（LLM）</p>
+                      <p className="whitespace-pre-wrap text-gray-700">{r.llm_evaluation}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

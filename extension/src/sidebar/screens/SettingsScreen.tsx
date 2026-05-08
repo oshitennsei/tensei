@@ -11,6 +11,7 @@ import {
   clearGlobalBackground, GRADIENT_PRESETS, DEFAULT_BG,
 } from "@/lib/background";
 import { useBackground } from "../context/BackgroundContext";
+import { db } from "@/lib/storage";
 
 function AboutSection() {
   const [open, setOpen] = useState(false);
@@ -113,16 +114,31 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
   const [bgColorInput, setBgColorInput] = useState("#1a1a2e");
   const bgFileRef = useRef<HTMLInputElement>(null);
   const [testMsg, setTestMsg] = useState("");
+  const [planMaxLoops, setPlanMaxLoops] = useState(3);
+  const [planDebugMode, setPlanDebugMode] = useState(false);
 
   const reload = async () => {
-    const [ms, as] = await Promise.all([listModels(), getRoleAssignments()]);
+    const [ms, as, appSettings] = await Promise.all([listModels(), getRoleAssignments(), db.app_settings.get("global")]);
     setModels(ms);
     setAssignments(as);
+    if (appSettings) {
+      setPlanMaxLoops(appSettings.plan_max_loops ?? 3);
+      setPlanDebugMode(appSettings.plan_debug_mode ?? false);
+    }
   };
   useEffect(() => {
     reload();
     getGlobalBackgroundState().then(setGlobalBgState);
   }, []);
+
+  const savePlanSettings = async (maxLoops: number, debugMode: boolean) => {
+    const existing = await db.app_settings.get("global");
+    if (existing) {
+      await db.app_settings.update("global", { plan_max_loops: maxLoops, plan_debug_mode: debugMode });
+    } else {
+      await db.app_settings.add({ id: "global", plan_max_loops: maxLoops, plan_debug_mode: debugMode });
+    }
+  };
 
   const refreshBg = async () => {
     const state = await getGlobalBackgroundState();
@@ -508,6 +524,47 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
           <Button variant="ghost" className="w-full text-left" onClick={onDebug}>
             解析データを確認 →
           </Button>
+        </section>
+
+        {/* ── Production plan settings ── */}
+        <section>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">演出計画・調査設定</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-700">調査ループ数</p>
+                <p className="text-xs text-gray-400">多いほど詳細な計画（デフォルト: 3）</p>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                value={planMaxLoops}
+                onChange={e => {
+                  const v = Math.max(1, Math.min(20, Number(e.target.value)));
+                  setPlanMaxLoops(v);
+                  savePlanSettings(v, planDebugMode);
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-700">デバッグモード</p>
+                <p className="text-xs text-gray-400">調査ログを演出計画に保存する</p>
+              </div>
+              <button
+                className={`w-10 h-6 rounded-full transition-colors ${planDebugMode ? "bg-indigo-600" : "bg-gray-300"}`}
+                onClick={() => {
+                  const next = !planDebugMode;
+                  setPlanDebugMode(next);
+                  savePlanSettings(planMaxLoops, next);
+                }}
+              >
+                <span className={`block w-4 h-4 bg-white rounded-full shadow transition-transform mx-1 ${planDebugMode ? "translate-x-4" : ""}`} />
+              </button>
+            </div>
+          </div>
         </section>
 
         {/* ── About ── */}
