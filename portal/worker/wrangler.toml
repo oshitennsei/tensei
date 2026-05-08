@@ -6,11 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "tensei-portal"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "3dea0593-1fd3-4bd9-89bd-66ea985b9f73"
 
 [[kv_namespaces]]
 binding = "MAGIC_LINK_KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "b32d14d8d1ad4f9ca83fd8fc977900a7"
 
 [vars]
 FRONTEND_URL = "https://tensei-portal.pages.dev"
