@@ -169,11 +169,17 @@ export async function* generateNextScene(
     db.characters_extended.bulkGet(session.characters_in_scene),
   ]);
 
-  // 3. Build system prompt (Japanese)
+  // 3. Build system prompt
   const workTitle = work?.title ?? session.work_id;
   const systemParts: string[] = [];
 
   systemParts.push(`作品: ${workTitle}`);
+
+  // Persist scene_directive: save initial direction on beat 0, inject for all beats
+  const effectiveDirective = session.scene_directive ?? (session.scene_progress === 0 ? direction.trim() : "");
+  if (effectiveDirective) {
+    systemParts.push(`【場面全体の指示】\n${effectiveDirective}`);
+  }
 
   // Characters block
   const characterLines: string[] = [];
@@ -345,6 +351,10 @@ export async function* generateNextScene(
     const updates: Partial<PerformanceSession> = { last_active: Date.now() };
     if (plan && session.scene_progress < plan.beats.length - 1) {
       updates.scene_progress = session.scene_progress + 1;
+    }
+    // Save initial direction as scene_directive so it persists across all beats
+    if (session.scene_progress === 0 && direction.trim() && !session.scene_directive) {
+      updates.scene_directive = direction.trim();
     }
     await db.performance_sessions.update(session.id, updates);
   }

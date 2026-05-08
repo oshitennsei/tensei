@@ -389,6 +389,7 @@ export interface PerformanceSession {
   created_at: number;
   last_active: number;
   production_plan_id?: string;
+  scene_directive?: string; // initial direction from beat 1, persisted for all subsequent beats
 }
 
 export interface SceneBlocking {
