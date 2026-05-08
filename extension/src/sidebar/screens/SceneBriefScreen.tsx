@@ -4,6 +4,17 @@ import { generatePlan } from "@/lib/performance";
 import { db } from "@/lib/storage";
 import type { Work, PerformanceSession, Chapter, SceneBasis, ProductionPlan } from "@/lib/storage";
 
+async function loadMaxLoops(): Promise<number> {
+  const s = await db.app_settings.get("global");
+  return s?.plan_max_loops ?? 3;
+}
+
+async function saveMaxLoops(v: number): Promise<void> {
+  const existing = await db.app_settings.get("global");
+  if (existing) await db.app_settings.update("global", { plan_max_loops: v });
+  else await db.app_settings.add({ id: "global", plan_max_loops: v });
+}
+
 interface Props {
   work: Work;
   session: PerformanceSession;
@@ -22,6 +33,7 @@ export function SceneBriefScreen({ work, session, onBack, onPlanReady }: Props) 
   const [referenceChapter, setReferenceChapter] = useState<number>(1);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [description, setDescription] = useState("");
+  const [maxLoops, setMaxLoops] = useState(3);
   const [generating, setGenerating] = useState(false);
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState("");
@@ -29,13 +41,13 @@ export function SceneBriefScreen({ work, session, onBack, onPlanReady }: Props) 
 
   useEffect(() => {
     const load = async () => {
-      const chs = await db.chapters
-        .where("work_id").equals(work.id).sortBy("chapter_number");
+      const [chs, loops] = await Promise.all([
+        db.chapters.where("work_id").equals(work.id).sortBy("chapter_number"),
+        loadMaxLoops(),
+      ]);
       setChapters(chs);
-      if (chs.length > 0) {
-        const max = chs[chs.length - 1].chapter_number;
-        setReferenceChapter(max);
-      }
+      setMaxLoops(loops);
+      if (chs.length > 0) setReferenceChapter(chs[chs.length - 1].chapter_number);
     };
     load();
   }, [work.id]);
@@ -175,6 +187,30 @@ export function SceneBriefScreen({ work, session, onBack, onPlanReady }: Props) 
               value={description}
               onChange={e => setDescription(e.target.value)}
             />
+          </section>
+
+          <section>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase">調査ループ数</p>
+                <p className="text-xs text-gray-400 mt-0.5">多いほど詳細な計画（ローカルLLM: 5〜10推奨）</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 5, 10].map(n => (
+                  <button
+                    key={n}
+                    className={`w-8 h-7 rounded text-xs font-mono transition-colors ${
+                      maxLoops === n
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                    onClick={() => { setMaxLoops(n); saveMaxLoops(n); }}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
           </section>
         </div>
       )}

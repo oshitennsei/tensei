@@ -221,7 +221,7 @@ export async function* generateNextScene(
       break;
   }
 
-  // Inject production plan if available
+  // Inject production plan + original source passages
   if (plan) {
     const beatIndex = session.scene_progress;
     const currentBeat = plan.beats[beatIndex] ?? plan.beats[plan.beats.length - 1];
@@ -236,10 +236,54 @@ export async function* generateNextScene(
     if (plan.props.length > 0) planLines.push(`  道具: ${plan.props.join('、')}`);
     if (currentBeat) planLines.push(`  現在の幕: ビート${beatIndex + 1}/${plan.beats.length} — ${currentBeat.description}`);
     systemParts.push(planLines.join("\n"));
+
+    // Retrieve original source passages for this beat
+    const entityNames = entities.filter(Boolean).map(e => e!.canonical_name);
+    const searchQuery = [currentBeat?.description ?? "", plan.what, ...entityNames].filter(Boolean).join(" ");
+
+    // Prioritize chunks from the reference chapter; supplement with general search
+    const [generalResults, refChapterChunks] = await Promise.all([
+      retrieveChunks(session.work_id, searchQuery, session.cutoff_chapter, 4),
+      plan.reference_chapter != null
+        ? (async () => {
+            const refCh = await db.chapters
+              .where("work_id").equals(session.work_id)
+              .filter(c => c.chapter_number === plan.reference_chapter)
+              .first();
+            if (!refCh) return [] as string[];
+            const allChunks = await db.chunks.where("chapter_id").equals(refCh.id).toArray();
+            const terms = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+            return allChunks
+              .map(c => ({ text: c.text, score: terms.filter(t => c.text.toLowerCase().includes(t)).length }))
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 5)
+              .map(r => r.text);
+          })()
+        : Promise.resolve([] as string[]),
+    ]);
+
+    // Combine: reference chapter first (most faithful), then general search
+    const seen = new Set<string>();
+    const passages: string[] = [];
+    for (const text of refChapterChunks) {
+      if (!seen.has(text)) { seen.add(text); passages.push(text); }
+    }
+    for (const r of generalResults) {
+      if (!seen.has(r.chunk.text)) { seen.add(r.chunk.text); passages.push(r.chunk.text); }
+    }
+
+    if (passages.length > 0) {
+      systemParts.push(
+        "【参考原文 — 必読・厳守】\n" +
+        "以下は原作の該当シーン。登場人物の行動・セリフ・出来事の順序・結末を原文に忠実に脚本化すること。" +
+        "原文にない出来事や台詞を創作してはならない。\n" +
+        passages.slice(0, 6).map(t => `---\n${t}`).join("\n")
+      );
+    }
   }
 
   // Format
-  systemParts.push("脚本形式（キャラクター名: セリフ / ト書き）で出力してください。800字以内。");
+  systemParts.push("脚本形式（キャラクター名: セリフ / ト書き）で出力してください。1200字以内。");
 
   const systemMessage: ChatMessage = {
     role: "system",
