@@ -274,16 +274,23 @@ export async function* generateNextScene(
 
     if (passages.length > 0) {
       systemParts.push(
-        "【参考原文 — 必読・厳守】\n" +
-        "以下は原作の該当シーン。登場人物の行動・セリフ・出来事の順序・結末を原文に忠実に脚本化すること。" +
-        "原文にない出来事や台詞を創作してはならない。\n" +
+        "【参考原文】\n" +
+        "以下は原作の該当テキスト。これを脚本形式に書き起こすことがあなたの仕事です。\n" +
+        "原文の言語・トーン・セリフ・出来事の順序をそのまま脚本に変換してください。\n" +
+        "出力言語は参考原文と同じ言語を使用してください。\n" +
         passages.slice(0, 6).map(t => `---\n${t}`).join("\n")
       );
     }
   }
 
-  // Format
-  systemParts.push("脚本形式（キャラクター名: セリフ / ト書き）で出力してください。1200字以内。");
+  // Format — explicit: no meta-commentary, no apologies, script only
+  systemParts.push(
+    "出力規則:\n" +
+    "- 脚本のみを出力すること。説明・謝罪・コメント・自己評価は一切不要。\n" +
+    "- キャラクター名: セリフ / ト書き の形式で出力。\n" +
+    "- 【スタッフ指示】ブロックは演出上の注釈であり、台本には含めないこと。\n" +
+    "- 1200字以内。"
+  );
 
   const systemMessage: ChatMessage = {
     role: "system",
@@ -298,8 +305,18 @@ export async function* generateNextScene(
     messages.push({ role: "assistant", content: previousContext });
   }
 
-  // 6. User message
-  const userContent = direction.trim() !== "" ? direction : "続きを生成";
+  // 6. User message — extract crew annotations from direction and convert to stage notes
+  const crewNotePattern = /【([^】]+)】/g;
+  const crewNotes: string[] = [];
+  const cleanDirection = direction.replace(crewNotePattern, (_, inner) => {
+    crewNotes.push(inner);
+    return "";
+  }).trim();
+
+  let userContent = cleanDirection || "続きを生成";
+  if (crewNotes.length > 0) {
+    userContent = `【スタッフ指示: ${crewNotes.join(" / ")}】\n${userContent}`;
+  }
   messages.push({ role: "user", content: userContent });
 
   // 7. Get LLM client
