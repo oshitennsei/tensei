@@ -9,8 +9,11 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { PersonaScreen } from "./screens/PersonaScreen";
 import { IngestScreen } from "./screens/IngestScreen";
 import { DebugScreen } from "./screens/DebugScreen";
+import { PerformanceSetupScreen } from "./screens/PerformanceSetupScreen";
+import { PerformanceScreen } from "./screens/PerformanceScreen";
+import { BtsScreen } from "./screens/BtsScreen";
 import { BackgroundProvider, useBackground } from "./context/BackgroundContext";
-import type { Work, Session } from "@/lib/storage";
+import type { Work, Session, PerformanceSession } from "@/lib/storage";
 
 type Screen =
   | { name: "home" }
@@ -22,7 +25,10 @@ type Screen =
   | { name: "settings" }
   | { name: "persona" }
   | { name: "ingest" }
-  | { name: "debug" };
+  | { name: "debug" }
+  | { name: "performance-setup"; work: Work }
+  | { name: "performance"; work: Work; session: PerformanceSession }
+  | { name: "bts"; work: Work; performanceSession: PerformanceSession };
 
 function getWorkId(s: Screen): string | undefined {
   switch (s.name) {
@@ -31,6 +37,9 @@ function getWorkId(s: Screen): string | undefined {
     case "chat":
     case "characters":
     case "character-edit":
+    case "performance-setup":
+    case "performance":
+    case "bts":
       return s.work.id;
     default:
       return undefined;
@@ -54,6 +63,35 @@ function AppContent() {
           onNewChat={() => setScreen({ name: "new-chat", work: screen.work })}
           onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
           onWorkDeleted={() => setScreen({ name: "home" })}
+          onPerformance={() => setScreen({ name: "performance-setup", work: screen.work })}
+        />
+      );
+    }
+    if (screen.name === "performance-setup") {
+      return (
+        <PerformanceSetupScreen
+          work={screen.work}
+          onBack={() => setScreen({ name: "work", work: screen.work })}
+          onStart={session => setScreen({ name: "performance", work: screen.work, session })}
+        />
+      );
+    }
+    if (screen.name === "performance") {
+      return (
+        <PerformanceScreen
+          work={screen.work}
+          session={screen.session}
+          onBack={() => setScreen({ name: "work", work: screen.work })}
+          onGoBackstage={session => setScreen({ name: "bts", work: screen.work, performanceSession: session })}
+        />
+      );
+    }
+    if (screen.name === "bts") {
+      return (
+        <BtsScreen
+          work={screen.work}
+          performanceSession={screen.performanceSession}
+          onBack={() => setScreen({ name: "performance", work: screen.work, session: screen.performanceSession })}
         />
       );
     }

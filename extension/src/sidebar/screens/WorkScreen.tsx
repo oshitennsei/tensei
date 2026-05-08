@@ -14,9 +14,10 @@ interface Props {
   onNewChat: () => void;
   onManageCharacters: () => void;
   onWorkDeleted: () => void;
+  onPerformance: () => void;
 }
 
-export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageCharacters, onWorkDeleted }: Props) {
+export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageCharacters, onWorkDeleted, onPerformance }: Props) {
   const { loadBackground } = useBackground();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [characters, setCharacters] = useState<Entity[]>([]);
@@ -210,6 +211,9 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
         <div className="p-4 space-y-2 border-b border-gray-100">
           <Button className="w-full" onClick={onNewChat}>
             + 新しいチャットを始める
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={onPerformance}>
+            パフォーマンスモード
           </Button>
           <Button variant="ghost" className="w-full" onClick={onManageCharacters}>
             キャラクターを管理
