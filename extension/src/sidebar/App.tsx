@@ -14,8 +14,10 @@ import { PerformanceScreen } from "./screens/PerformanceScreen";
 import { SceneBriefScreen } from "./screens/SceneBriefScreen";
 import { ProductionPlanScreen } from "./screens/ProductionPlanScreen";
 import { BtsScreen } from "./screens/BtsScreen";
+import { BtsBriefScreen } from "./screens/BtsBriefScreen";
 import { BackgroundProvider, useBackground } from "./context/BackgroundContext";
-import type { Work, Session, PerformanceSession, ProductionPlan } from "@/lib/storage";
+import type { BtsSetup } from "@/lib/bts";
+import type { Work, Session, PerformanceSession, ProductionPlan, BtsSession, BtsLocation, BtsCrewMember } from "@/lib/storage";
 
 type Screen =
   | { name: "home" }
@@ -32,7 +34,8 @@ type Screen =
   | { name: "scene-brief"; work: Work; session: PerformanceSession }
   | { name: "production-plan"; work: Work; session: PerformanceSession; plan: ProductionPlan }
   | { name: "performance"; work: Work; session: PerformanceSession }
-  | { name: "bts"; work: Work; performanceSession: PerformanceSession };
+  | { name: "bts-brief"; work: Work; performanceSession: PerformanceSession }
+  | { name: "bts"; work: Work; performanceSession: PerformanceSession; initialSession?: BtsSession; initialLocation?: BtsLocation; initialCrew?: BtsCrewMember[] };
 
 function getWorkId(s: Screen): string | undefined {
   switch (s.name) {
@@ -45,6 +48,7 @@ function getWorkId(s: Screen): string | undefined {
     case "scene-brief":
     case "production-plan":
     case "performance":
+    case "bts-brief":
     case "bts":
       return s.work.id;
     default:
@@ -137,7 +141,26 @@ function AppContent() {
           work={screen.work}
           session={screen.session}
           onBack={() => setScreen({ name: "work", work: screen.work })}
-          onGoBackstage={session => setScreen({ name: "bts", work: screen.work, performanceSession: session })}
+          onGoBackstage={session => setScreen({ name: "bts-brief", work: screen.work, performanceSession: session })}
+        />
+      );
+    }
+    if (screen.name === "bts-brief") {
+      return (
+        <BtsBriefScreen
+          work={screen.work}
+          performanceSession={screen.performanceSession}
+          onBack={() => setScreen({ name: "performance", work: screen.work, session: screen.performanceSession })}
+          onReady={(setup: BtsSetup, session: BtsSession) =>
+            setScreen({
+              name: "bts",
+              work: screen.work,
+              performanceSession: screen.performanceSession,
+              initialSession: session,
+              initialLocation: setup.location,
+              initialCrew: setup.crew,
+            })
+          }
         />
       );
     }
@@ -146,7 +169,10 @@ function AppContent() {
         <BtsScreen
           work={screen.work}
           performanceSession={screen.performanceSession}
-          onBack={() => setScreen({ name: "performance", work: screen.work, session: screen.performanceSession })}
+          onBack={() => setScreen({ name: "bts-brief", work: screen.work, performanceSession: screen.performanceSession })}
+          initialSession={screen.initialSession}
+          initialLocation={screen.initialLocation}
+          initialCrew={screen.initialCrew}
         />
       );
     }

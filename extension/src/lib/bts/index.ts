@@ -1,6 +1,11 @@
 import { LlmClient, LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
-import type { BtsSession, BtsTurn, PerformerSkill } from "@/lib/storage";
+import type { BtsCrewMember, BtsLocation, BtsSession, BtsTurn, PerformerSkill, PerformanceSession } from "@/lib/storage";
+
+export interface BtsSetup {
+  location: BtsLocation;
+  crew: BtsCrewMember[];
+}
 
 export async function getOrCreateSkill(character_id: string, work_id: string): Promise<PerformerSkill> {
   // 1. Return existing skill if present
@@ -95,13 +100,96 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
   return skill;
 }
 
-export async function createBtsSession(work_id: string, character_ids: string[]): Promise<BtsSession> {
+export async function generateBtsSetup(
+  performanceSession: PerformanceSession,
+  description: string,
+): Promise<BtsSetup> {
+  const work = await db.works.get(performanceSession.work_id);
+  const rawEntities = await db.entities.bulkGet(performanceSession.characters_in_scene);
+  const characterNames = rawEntities
+    .filter((e): e is NonNullable<typeof e> => e != null)
+    .map(e => e.canonical_name);
+
+  const prompt = [
+    `作品「${work?.title ?? performanceSession.work_id}」の幕後（楽屋）シーンを設定してください。`,
+    "",
+    `出演者: ${characterNames.join("、")}`,
+    `シチュエーション: ${description}`,
+    "",
+    "JSONのみ返却（説明不要）:",
+    '{',
+    '  "location": "makeup_room" | "set" | "rest_area" | "cafeteria",',
+    '  "crew": [',
+    '    { "role": "照明担当", "name": "架空の名前", "persona_snippet": "一行の人物描写" },',
+    '    ...',
+    '  ]',
+    '}',
+    "",
+    "location の選択基準:",
+    "- makeup_room: 化粧・衣装に関する描写があれば",
+    "- set: 撮影・演技の場面があれば",
+    "- rest_area: 休憩・雑談があれば",
+    "- cafeteria: 食事・飲み物があれば",
+    "",
+    "crew は location に応じて2〜4名を生成:",
+    "- makeup_room: ヘアメイク、衣装担当",
+    "- set: 場記、照明担当、収音担当、道具担当",
+    "- rest_area: スタッフ（汎用）",
+    "- cafeteria: ケータリングスタッフ、アシスタント",
+    "",
+    "persona_snippetは一行（20字以内）。日本語で出力。",
+  ].join("\n");
+
+  const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
+  if (!client) {
+    return { location: "rest_area", crew: [] };
+  }
+
+  let raw: string;
+  try {
+    raw = await client.complete([
+      { role: "system", content: prompt },
+      { role: "user", content: "生成" },
+    ]);
+  } catch {
+    return { location: "rest_area", crew: [] };
+  }
+
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+  interface RawSetup {
+    location?: string;
+    crew?: BtsCrewMember[];
+  }
+
+  let parsed: RawSetup;
+  try {
+    parsed = JSON.parse(cleaned) as RawSetup;
+  } catch {
+    return { location: "rest_area", crew: [] };
+  }
+
+  const validLocations: BtsLocation[] = ["makeup_room", "set", "rest_area", "cafeteria"];
+  const location: BtsLocation = validLocations.includes(parsed.location as BtsLocation)
+    ? (parsed.location as BtsLocation)
+    : "rest_area";
+  const crew: BtsCrewMember[] = Array.isArray(parsed.crew) ? parsed.crew : [];
+
+  return { location, crew };
+}
+
+export async function createBtsSession(
+  work_id: string,
+  character_ids: string[],
+  location: BtsLocation = "rest_area",
+  crew: BtsCrewMember[] = [],
+): Promise<BtsSession> {
   const session: BtsSession = {
     id: crypto.randomUUID(),
     work_id,
     present_performers: character_ids,
-    present_crew: [],
-    location: "rest_area",
+    present_crew: crew,
+    location,
     conversation_history: [],
     created_at: Date.now(),
     last_active: Date.now(),
@@ -180,4 +268,47 @@ export async function listBtsSessions(work_id: string): Promise<BtsSession[]> {
     .equals(work_id)
     .sortBy("last_active");
   return sessions.reverse();
+}
+
+export async function generateCrewInterjection(
+  session: BtsSession,
+  lastExchange: string,
+): Promise<string | null> {
+  if (session.present_crew.length === 0) return null;
+  if (Math.random() > 0.15) return null;
+
+  const member = session.present_crew[Math.floor(Math.random() * session.present_crew.length)];
+
+  const locationLabels: Record<BtsLocation, string> = {
+    makeup_room: "化粧室",
+    set: "撮影セット",
+    rest_area: "休憩室",
+    cafeteria: "食堂",
+  };
+  const locationLabel = locationLabels[session.location];
+
+  const prompt = [
+    `あなたは${member.role}の${member.name}です。${locationLabel}にいます。`,
+    `性格: ${member.persona_snippet}`,
+    "",
+    "今の会話の流れ:",
+    lastExchange,
+    "",
+    "場の雰囲気に合う短い一言を言ってください。1〜2文。キャラクター名や「声優」という言葉は使わないこと。",
+  ].join("\n");
+
+  const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
+  if (!client) return null;
+
+  let response: string;
+  try {
+    response = await client.complete([
+      { role: "system", content: prompt },
+      { role: "user", content: "一言" },
+    ]);
+  } catch {
+    return null;
+  }
+
+  return `**${member.name}（${member.role}）**: ${response.trim()}`;
 }
