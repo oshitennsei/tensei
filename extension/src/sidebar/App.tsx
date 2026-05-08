@@ -46,6 +46,31 @@ function getWorkId(s: Screen): string | undefined {
   }
 }
 
+function ExpandButton() {
+  const [isSidePanel, setIsSidePanel] = useState(window.innerWidth <= 480);
+  useEffect(() => {
+    const onResize = () => setIsSidePanel(window.innerWidth <= 480);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  if (!isSidePanel) return null;
+  const open = () => chrome.windows.create({
+    url: chrome.runtime.getURL("src/sidebar/index.html"),
+    type: "popup",
+    width: 800,
+    height: 900,
+  });
+  return (
+    <button
+      onClick={open}
+      title="ウィンドウで開く"
+      className="absolute top-2 right-2 z-20 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded text-sm transition-colors"
+    >
+      ↗
+    </button>
+  );
+}
+
 function AppContent() {
   const { bgCss, loadBackground } = useBackground();
   const [screen, setScreen] = useState<Screen>({ name: "home" });
@@ -172,6 +197,7 @@ function AppContent() {
       <div className="relative z-10 h-full bg-white/80 backdrop-blur-sm">
         {content}
       </div>
+      <ExpandButton />
     </div>
   );
 }

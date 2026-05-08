@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "好きな小説のキャラクターと対話できる拡張機能",
   "minimum_chrome_version": "114",
-  "permissions": ["sidePanel", "storage", "alarms"],
+  "permissions": ["sidePanel", "storage", "alarms", "windows"],
   "host_permissions": ["https://raw.githubusercontent.com/*", "<all_urls>"],
   "background": {
     "service_worker": "src/background/index.ts",
