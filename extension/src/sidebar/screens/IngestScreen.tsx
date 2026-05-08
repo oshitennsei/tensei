@@ -84,8 +84,10 @@ export function IngestScreen({ onBack, onDone }: Props) {
   const [batchDone, setBatchDone] = useState(0);
   const [batchCurrent, setBatchCurrent] = useState("");
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
+  const dragIndexRef = useRef<number | null>(null);
 
   useEffect(() => { listWorks().then(setWorks); }, []);
 
@@ -133,6 +135,27 @@ export function IngestScreen({ onBack, onDone }: Props) {
       return next;
     });
   };
+
+  const handleDragStart = (idx: number) => { dragIndexRef.current = idx; };
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    setDragOver(idx);
+  };
+  const handleDrop = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    setDragOver(null);
+    const from = dragIndexRef.current;
+    if (from === null || from === idx) return;
+    setBatchFiles(prev => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      next.splice(idx, 0, item);
+      next.forEach((p, i) => { p.globalChapter = nextChapter + i; });
+      return next;
+    });
+    dragIndexRef.current = null;
+  };
+  const handleDragEnd = () => { setDragOver(null); dragIndexRef.current = null; };
 
   const handleBatchStart = async () => {
     if (!work || batchFiles.length === 0) return;
@@ -360,7 +383,18 @@ export function IngestScreen({ onBack, onDone }: Props) {
                 <input ref={fileInputRef} type="file" accept=".md,.txt" multiple className="hidden" onChange={handleFileSelect} />
                 <ul className="text-xs text-gray-600 space-y-0.5 max-h-64 overflow-y-auto border border-gray-100 rounded p-2">
                   {batchFiles.map((pf, idx) => (
-                    <li key={pf.file.name} className="flex items-center gap-1 py-0.5">
+                    <li
+                      key={pf.file.name}
+                      draggable
+                      onDragStart={() => handleDragStart(idx)}
+                      onDragOver={e => handleDragOver(e, idx)}
+                      onDrop={e => handleDrop(e, idx)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center gap-1 py-0.5 rounded cursor-grab active:cursor-grabbing transition-colors ${
+                        dragOver === idx ? "bg-indigo-50 border border-indigo-300" : "border border-transparent"
+                      }`}
+                    >
+                      <span className="text-gray-300 px-1 select-none">⠿</span>
                       <span className="text-gray-400 w-8 shrink-0 font-mono">#{pf.globalChapter}</span>
                       <span className="flex-1 truncate">{pf.title || pf.file.name}</span>
                       <div className="flex shrink-0">
