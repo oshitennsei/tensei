@@ -5,7 +5,7 @@ import { buildContext } from "@/lib/retrieval";
 import { buildReaderPersonaText } from "@/lib/persona";
 import { checkInput, checkOutput, exceedsInputLimit, HARD_LIMITS } from "@/lib/content-safety";
 import { db } from "@/lib/storage";
-import type { Session, Turn } from "@/lib/storage";
+import type { Session, Turn, Language } from "@/lib/storage";
 
 async function extractRetrievalQuery(
   user_message: string,
@@ -127,6 +127,7 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
 
   const work = await db.works.get(session.work_id);
   const lang = work?.language ?? "ja";
+  const glossary = await db.work_glossaries.get(session.work_id);
 
   const systemParts: string[] = [];
 
@@ -161,6 +162,14 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     if (characterExt.forbidden_topics.length > 0) {
       systemParts.push("以下のトピックには応答しません:\n" + characterExt.forbidden_topics.map(t => `- ${t}`).join("\n"));
     }
+  }
+
+  if (glossary && glossary.entries.length > 0 && lang !== "ja") {
+    const table = glossary.entries
+      .filter(e => e.translations[lang as Language])
+      .map(e => `- ${e.original} → ${e.translations[lang as Language]}`)
+      .join("\n");
+    if (table) systemParts.push(`固有名詞対照表:\n${table}`);
   }
 
   if (ragContext) systemParts.push(ragContext);

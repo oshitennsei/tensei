@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "../components/Button";
 import { db } from "@/lib/storage";
-import type { Work, Entity, CharacterExtended } from "@/lib/storage";
+import type { Work, Entity, CharacterExtended, GlossaryEntry } from "@/lib/storage";
 
 interface Props {
   work: Work;
@@ -13,8 +13,12 @@ interface Props {
 export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [extIds, setExtIds] = useState<Set<string>>(new Set());
+  const [authorProvidedIds, setAuthorProvidedIds] = useState<Set<string>>(new Set());
   const [importError, setImportError] = useState("");
   const [importOk, setImportOk] = useState("");
+  const [showUrlImport, setShowUrlImport] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlImporting, setUrlImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reload = async () => {
@@ -24,6 +28,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
     ]);
     setCharacters(chars.sort((a, b) => (a.first_appearance ?? 99) - (b.first_appearance ?? 99)));
     setExtIds(new Set(exts.map(e => e.id)));
+    setAuthorProvidedIds(new Set(exts.filter(e => e.author_provided).map(e => e.id)));
   };
 
   useEffect(() => { reload(); }, [work.id]);
@@ -37,19 +42,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
     reload();
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    setImportError(""); setImportOk("");
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-
-    let json: Record<string, unknown>;
-    try {
-      json = JSON.parse(await file.text());
-    } catch {
-      setImportError("JSONの解析に失敗しました。"); return;
-    }
-
+  const importFromJson = async (json: Record<string, unknown>) => {
     const name = String(json.canonical_name ?? "").trim();
     if (!name) { setImportError("canonical_name が見つかりません。"); return; }
 
@@ -80,15 +73,16 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
       persona: String(json.persona ?? ""),
       speech_style: String(json.speech_style ?? "") || undefined,
       voice_samples: (json.voice_samples as CharacterExtended["voice_samples"]) ?? [],
-      will_do: [],
+      will_do: (json.will_do as string[]) ?? [],
       will_not_do: (json.will_not_do as string[]) ?? [],
       forbidden_topics: (json.forbidden_topics as string[]) ?? [],
+      dialogue_examples: (json.dialogue_examples as CharacterExtended["dialogue_examples"]) ?? [],
       state_snapshots: (json.state_snapshots as CharacterExtended["state_snapshots"]) ?? [],
       locked_fields: (json.locked_fields as CharacterExtended["locked_fields"]) ?? [],
       author_provided: true,
     };
 
-    await db.transaction("rw", [db.entities, db.characters_extended], async () => {
+    await db.transaction("rw", [db.entities, db.characters_extended, db.work_glossaries], async () => {
       if (existing) {
         await db.entities.put(entity);
         await db.characters_extended.put(ext);
@@ -98,10 +92,67 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
         if (extExists) await db.characters_extended.put(ext);
         else await db.characters_extended.add(ext);
       }
+
+      if (json.glossary && Array.isArray(json.glossary)) {
+        const entries = json.glossary as GlossaryEntry[];
+        const existingGlossary = await db.work_glossaries.get(work.id);
+        if (existingGlossary) {
+          // merge: update existing entries, add new ones
+          const merged = [...existingGlossary.entries];
+          for (const e of entries) {
+            const idx = merged.findIndex(x => x.original === e.original);
+            if (idx >= 0) merged[idx] = e;
+            else merged.push(e);
+          }
+          await db.work_glossaries.put({ ...existingGlossary, entries: merged });
+        } else {
+          await db.work_glossaries.add({ id: work.id, work_id: work.id, entries });
+        }
+      }
     });
 
     setImportOk(`「${name}」をインポートしました。`);
     reload();
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setImportError(""); setImportOk("");
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    let json: Record<string, unknown>;
+    try {
+      json = JSON.parse(await file.text());
+    } catch {
+      setImportError("JSONの解析に失敗しました。"); return;
+    }
+
+    await importFromJson(json);
+  };
+
+  const handleUrlImport = async () => {
+    setImportError(""); setImportOk("");
+    const url = urlInput.trim();
+    if (!url) return;
+    setUrlImporting(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { setImportError(`取得に失敗しました: ${res.status}`); return; }
+      let json: Record<string, unknown>;
+      try {
+        json = await res.json();
+      } catch {
+        setImportError("JSONの解析に失敗しました。"); return;
+      }
+      await importFromJson(json);
+      setUrlInput("");
+      setShowUrlImport(false);
+    } catch (err) {
+      setImportError(`取得エラー: ${String(err)}`);
+    } finally {
+      setUrlImporting(false);
+    }
   };
 
   return (
@@ -109,10 +160,26 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
       <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
         <Button variant="ghost" size="sm" onClick={onBack}>← 戻る</Button>
         <h2 className="text-sm font-semibold flex-1">キャラクター管理</h2>
+        <Button variant="ghost" size="sm" onClick={() => setShowUrlImport(p => !p)}>URL読込</Button>
         <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>JSON読込</Button>
         <Button size="sm" onClick={onAdd}>+ 追加</Button>
         <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
       </header>
+
+      {showUrlImport && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50">
+          <input
+            className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-xs"
+            placeholder="GitHub raw URL"
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleUrlImport(); }}
+          />
+          <Button size="sm" onClick={handleUrlImport} disabled={urlImporting || !urlInput.trim()}>
+            {urlImporting ? "読込中..." : "読み込み"}
+          </Button>
+        </div>
+      )}
 
       {(importError || importOk) && (
         <div className={`mx-4 mt-2 px-3 py-1.5 rounded text-xs ${importError ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
@@ -143,6 +210,9 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
                       <span className="text-xs text-amber-600 bg-amber-50 rounded px-1.5 py-0.5">
                         ペルソナ未設定
                       </span>
+                    )}
+                    {authorProvidedIds.has(c.id) && (
+                      <span className="text-xs text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">公式</span>
                     )}
                   </div>
                   {c.description && (

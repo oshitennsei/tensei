@@ -235,6 +235,18 @@ export interface Persona {
   is_default: boolean;
 }
 
+export interface GlossaryEntry {
+  original: string;
+  translations: Partial<Record<Language, string>>;
+  notes?: string;
+}
+
+export interface WorkGlossary {
+  id: string;  // same as work_id, singleton per work
+  work_id: string;
+  entries: GlossaryEntry[];
+}
+
 // Also stored in Session to track which version of a character is being used
 export interface SessionCharacterVersion {
   session_id: string;

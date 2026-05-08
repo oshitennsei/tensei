@@ -26,16 +26,19 @@ function splitLines(s: string): string[] {
 function buildExportJson(entity: Entity, ext: CharacterExtended): string {
   return JSON.stringify({
     version: "1.0",
+    schema: "https://raw.githubusercontent.com/Chakotay-Lee/tensei-authors/main/schemas/character-config.schema.json",
     canonical_name: entity.canonical_name,
     aliases: entity.aliases,
     description: entity.description,
     first_appearance: entity.first_appearance,
     persona: ext.persona,
     speech_style: ext.speech_style ?? "",
+    will_do: ext.will_do,
     will_not_do: ext.will_not_do,
     forbidden_topics: ext.forbidden_topics,
     locked_fields: ext.locked_fields ?? [],
     voice_samples: ext.voice_samples,
+    dialogue_examples: ext.dialogue_examples ?? [],
     state_snapshots: ext.state_snapshots,
     author_provided: true,
   }, null, 2);
