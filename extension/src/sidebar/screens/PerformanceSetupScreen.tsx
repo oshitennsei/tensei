@@ -8,9 +8,10 @@ interface Props {
   work: Work;
   onBack: () => void;
   onStart: (session: PerformanceSession) => void;
+  onManageCharacters: () => void;
 }
 
-export function PerformanceSetupScreen({ work, onBack, onStart }: Props) {
+export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacters }: Props) {
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [maxChapter, setMaxChapter] = useState<number>(1);
@@ -89,7 +90,12 @@ export function PerformanceSetupScreen({ work, onBack, onStart }: Props) {
         <section>
           <p className="text-xs font-semibold text-gray-500 uppercase mb-2">キャラクター選択</p>
           {characters.length === 0 ? (
-            <p className="text-sm text-gray-400">キャラクターが登録されていません。</p>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-400">キャラクターが登録されていません。</p>
+              <Button variant="ghost" size="sm" onClick={onManageCharacters}>
+                キャラクターを管理 →
+              </Button>
+            </div>
           ) : (
             <ul className="space-y-1">
               {characters.map(c => (

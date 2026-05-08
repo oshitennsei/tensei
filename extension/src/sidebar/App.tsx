@@ -73,6 +73,7 @@ function AppContent() {
           work={screen.work}
           onBack={() => setScreen({ name: "work", work: screen.work })}
           onStart={session => setScreen({ name: "performance", work: screen.work, session })}
+          onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
         />
       );
     }
