@@ -12,6 +12,51 @@ import {
 } from "@/lib/background";
 import { useBackground } from "../context/BackgroundContext";
 
+function AboutSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="border-t border-gray-100 pt-4">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase">このアプリについて</h3>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs text-gray-700">{__APP_VERSION__}</span>
+          <button
+            className="text-xs text-indigo-500 hover:underline"
+            onClick={() => setOpen(v => !v)}
+          >
+            {open ? "閉じる" : "詳細"}
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-3">
+          <div className="space-y-1 text-xs text-gray-500">
+            <div className="flex justify-between">
+              <span>ライセンス</span>
+              <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">GNU GPL v3.0</a>
+            </div>
+            <div className="flex justify-between">
+              <span>ソースコード</span>
+              <a href="https://github.com/Chakotay-Lee/tensei" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">GitHub</a>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 mb-1.5">使用ライブラリ</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-400">
+              <span>React 18</span><span className="text-right">MIT</span>
+              <span>Dexie.js</span><span className="text-right">Apache 2.0</span>
+              <span>@huggingface/transformers</span><span className="text-right">Apache 2.0</span>
+              <span>Vite</span><span className="text-right">MIT</span>
+              <span>Tailwind CSS</span><span className="text-right">MIT</span>
+              <span>TypeScript</span><span className="text-right">Apache 2.0</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface Props {
   onBack: () => void;
   onDebug: () => void;
@@ -466,44 +511,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
         </section>
 
         {/* ── About ── */}
-        <section className="border-t border-gray-100 pt-4">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">このアプリについて</h3>
-          <div className="space-y-1 text-xs text-gray-500">
-            <div className="flex justify-between">
-              <span>バージョン</span>
-              <span className="font-mono text-gray-700">{__APP_VERSION__}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>ライセンス</span>
-              <a
-                href="https://www.gnu.org/licenses/gpl-3.0.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-indigo-500 hover:underline"
-              >GNU GPL v3.0</a>
-            </div>
-            <div className="flex justify-between">
-              <span>ソースコード</span>
-              <a
-                href="https://github.com/Chakotay-Lee/tensei"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-indigo-500 hover:underline"
-              >GitHub</a>
-            </div>
-          </div>
-          <div className="mt-3">
-            <p className="text-xs text-gray-400 mb-1.5">使用ライブラリ</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-400">
-              <span>React 18</span><span className="text-right">MIT</span>
-              <span>Dexie.js</span><span className="text-right">Apache 2.0</span>
-              <span>@huggingface/transformers</span><span className="text-right">Apache 2.0</span>
-              <span>Vite</span><span className="text-right">MIT</span>
-              <span>Tailwind CSS</span><span className="text-right">MIT</span>
-              <span>TypeScript</span><span className="text-right">Apache 2.0</span>
-            </div>
-          </div>
-        </section>
+        <AboutSection />
 
       </div>
     </div>
