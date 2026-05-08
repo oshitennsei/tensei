@@ -240,36 +240,47 @@ export async function* generateNextScene(
     // Retrieve original source passages for this beat
     const entityNames = entities.filter(Boolean).map(e => e!.canonical_name);
     const searchQuery = [currentBeat?.description ?? "", plan.what, ...entityNames].filter(Boolean).join(" ");
+    const queryTerms = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
-    // Prioritize chunks from the reference chapter; supplement with general search
-    const [generalResults, refChapterChunks] = await Promise.all([
-      retrieveChunks(session.work_id, searchQuery, session.cutoff_chapter, 4),
-      plan.reference_chapter != null
-        ? (async () => {
-            const refCh = await db.chapters
-              .where("work_id").equals(session.work_id)
-              .filter(c => c.chapter_number === plan.reference_chapter)
-              .first();
-            if (!refCh) return [] as string[];
-            const allChunks = await db.chunks.where("chapter_id").equals(refCh.id).toArray();
-            const terms = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
-            return allChunks
-              .map(c => ({ text: c.text, score: terms.filter(t => c.text.toLowerCase().includes(t)).length }))
-              .sort((a, b) => b.score - a.score)
-              .slice(0, 5)
-              .map(r => r.text);
-          })()
-        : Promise.resolve([] as string[]),
-    ]);
-
-    // Combine: reference chapter first (most faithful), then general search
-    const seen = new Set<string>();
     const passages: string[] = [];
-    for (const text of refChapterChunks) {
-      if (!seen.has(text)) { seen.add(text); passages.push(text); }
+
+    if (plan.reference_chapter != null) {
+      // For reference chapters: anchor on the best-matching chunk, then take a
+      // sliding window of consecutive chunks (preserves narrative flow).
+      // This prevents random high-scoring chunks from unrelated sections polluting the scene.
+      const refCh = await db.chapters
+        .where("work_id").equals(session.work_id)
+        .filter(c => c.chapter_number === plan.reference_chapter)
+        .first();
+      if (refCh) {
+        const allChunks = await db.chunks
+          .where("chapter_id").equals(refCh.id)
+          .sortBy("position");
+
+        if (allChunks.length > 0) {
+          // Score each chunk; also boost chunks where scene characters appear
+          const charIds = new Set(session.characters_in_scene);
+          const scored = allChunks.map((c, idx) => ({
+            idx,
+            score: queryTerms.filter(t => c.text.toLowerCase().includes(t)).length
+              + (c.characters_present?.some(id => charIds.has(id)) ? 1 : 0),
+          }));
+          const bestIdx = scored.reduce((a, b) => b.score > a.score ? b : a, scored[0]).idx;
+
+          // Sliding window: anchor-1 … anchor+4 (6 chunks max, in narrative order)
+          const wStart = Math.max(0, bestIdx - 1);
+          const wEnd = Math.min(allChunks.length, bestIdx + 5);
+          for (let i = wStart; i < wEnd; i++) {
+            passages.push(allChunks[i].text);
+          }
+        }
+      }
     }
-    for (const r of generalResults) {
-      if (!seen.has(r.chunk.text)) { seen.add(r.chunk.text); passages.push(r.chunk.text); }
+
+    // If no reference chapter (spinoff/virtual/post_story), use general hybrid search
+    if (passages.length === 0) {
+      const generalResults = await retrieveChunks(session.work_id, searchQuery, session.cutoff_chapter, 5);
+      for (const r of generalResults) passages.push(r.chunk.text);
     }
 
     if (passages.length > 0) {
