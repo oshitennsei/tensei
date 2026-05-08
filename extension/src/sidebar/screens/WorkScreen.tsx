@@ -150,7 +150,7 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
       {showBgPanel && (
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/90 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-gray-600">この作品の背景（全局設定を上書き）</p>
+            <p className="text-xs font-medium text-gray-600">この作品の背景（デフォルト設定を上書き）</p>
           </div>
 
           {/* Current preview */}
@@ -159,13 +159,13 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
             style={{ background: workBgState.image ? `url(${workBgState.image}) center/cover no-repeat` : (workBgState.value ?? DEFAULT_BG) }}
           >
             {!workBgState.image && !workBgState.value && (
-              <span className="text-white/60 text-xs">全局設定を使用</span>
+              <span className="text-white/60 text-xs">デフォルト設定を使用</span>
             )}
             {(workBgState.image || workBgState.value) && (
               <button
                 className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 text-xs leading-none"
                 onClick={handleClearWorkBg}
-                title="リセット（全局設定に戻す）"
+                title="リセット（デフォルト設定に戻す）"
               >×</button>
             )}
           </div>
@@ -199,7 +199,7 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
               onChange={e => setBgColorInput(e.target.value)}
             />
             <Button variant="ghost" size="sm" className="flex-1" onClick={() => handleWorkBgValue(bgColorInput)}>
-              素色を適用
+              単色を適用
             </Button>
           </div>
         </div>

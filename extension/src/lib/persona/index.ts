@@ -11,10 +11,13 @@ const LANGUAGE_LABELS: Partial<Record<Language, string>> = {
 
 export async function getPersonaForWork(work_id: string): Promise<Persona | null> {
   const all = await db.personas.toArray();
-  const matched = all.find(p =>
-    p.applies_to.some(pattern => pattern === "*" || work_id.includes(pattern))
+  // Specific patterns take priority over wildcard "*"
+  const specific = all.find(p =>
+    p.applies_to.some(pattern => pattern !== "*" && work_id.includes(pattern))
   );
-  if (matched) return matched;
+  if (specific) return specific;
+  const wildcard = all.find(p => p.applies_to.includes("*"));
+  if (wildcard) return wildcard;
   const defaultP = await db.personas.where("is_default").equals(1 as never).first();
   return defaultP ?? null;
 }

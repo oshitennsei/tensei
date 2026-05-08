@@ -4,10 +4,10 @@ import defaultBgPng from "@/assets/default-bg.png";
 export const DEFAULT_BG = `url(${defaultBgPng}) center/cover no-repeat`;
 
 export const GRADIENT_PRESETS: { label: string; value: string }[] = [
-  { label: "深夜書房", value: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" },
-  { label: "黎明前", value: "linear-gradient(135deg, #2d1b69 0%, #11998e 100%)" },
-  { label: "月明廊", value: "linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)" },
-  { label: "楓葉秋", value: "linear-gradient(135deg, #3d1a00 0%, #6b2d0e 50%, #4a1504 100%)" },
+  { label: "深夜の書斎", value: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" },
+  { label: "夜明け前",   value: "linear-gradient(135deg, #2d1b69 0%, #11998e 100%)" },
+  { label: "月夜の廊下", value: "linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)" },
+  { label: "紅葉の秋",   value: "linear-gradient(135deg, #3d1a00 0%, #6b2d0e 50%, #4a1504 100%)" },
 ];
 
 async function compressImage(file: File): Promise<Blob> {

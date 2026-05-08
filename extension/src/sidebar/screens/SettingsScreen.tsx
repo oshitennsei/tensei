@@ -396,7 +396,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
             style={{ background: globalBgState.image ? `url(${globalBgState.image}) center/cover no-repeat` : (globalBgState.value ?? DEFAULT_BG) }}
           >
             {!globalBgState.image && !globalBgState.value && (
-              <span className="text-white/60 text-xs">デフォルト（深夜書房）</span>
+              <span className="text-white/60 text-xs">デフォルト（深夜の書斎）</span>
             )}
             {(globalBgState.image || globalBgState.value) && (
               <button
@@ -435,7 +435,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
 
             {/* Solid color */}
             <div className="flex items-center gap-2">
-              <p className="text-xs text-gray-400 shrink-0">素色</p>
+              <p className="text-xs text-gray-400 shrink-0">単色</p>
               <input
                 type="color"
                 className="w-8 h-6 rounded cursor-pointer border border-gray-300"

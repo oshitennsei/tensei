@@ -1,8 +1,9 @@
 // Hard limits for Phase 1 — client-side keyword blocking only.
 // Phase 3 will add LLM-based moderation.
 
+// Japanese CJK terms need no \b boundary (CJK chars are not \w in JS regex)
 const BLOCKED_PATTERNS = [
-  /\b(爆発物|爆弾|武器製造|麻薬|覚醒剤|児童ポルノ|child\s*porn|bomb\s*mak)/i,
+  /(爆発物|爆弾|武器製造|麻薬|覚醒剤|児童ポルノ|child\s*porn|\bbomb\s*mak)/i,
 ];
 
 export interface SafetyResult {
