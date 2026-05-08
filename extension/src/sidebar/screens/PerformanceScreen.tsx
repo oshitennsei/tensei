@@ -126,6 +126,7 @@ export function PerformanceScreen({ work, session, onBack, onGoBackstage }: Prop
         {!generating && (
           <div className="flex gap-1 flex-wrap">
             {([
+              { label: "アクション！", text: "【場記：カチンコ！アクション！】" },
               { label: "カット！", text: "【監督：カット！もう一度やり直し】" },
               { label: "道具確認", text: "【道具担当：小道具の確認が必要】" },
               { label: "音声チェック", text: "【音声：マイクレベル調整、少し待って】" },
