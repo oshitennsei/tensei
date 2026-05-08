@@ -52,7 +52,7 @@ function prepareFiles(files: File[], nextChapter: number): ParsedFile[] {
     if (!info) continue;
     parsed.push({ file, ...info, globalChapter: 0 });
   }
-  parsed.sort((a, b) => a.part - b.part || a.chapterInPart - b.chapterInPart);
+  parsed.sort((a, b) => a.part - b.part || a.chapterInPart - b.chapterInPart || a.file.name.localeCompare(b.file.name, undefined, { numeric: true }));
   parsed.forEach((p, i) => { p.globalChapter = nextChapter + i; });
   return parsed;
 }
@@ -122,6 +122,16 @@ export function IngestScreen({ onBack, onDone }: Props) {
     if (files.length === 0) return;
     setBatchFiles(prepareFiles(files, nextChapter));
     setStep("batch-select");
+  };
+
+  const moveFile = (idx: number, dir: -1 | 1) => {
+    setBatchFiles(prev => {
+      const next = [...prev];
+      const swap = idx + dir;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      next.forEach((p, i) => { p.globalChapter = nextChapter + i; });
+      return next;
+    });
   };
 
   const handleBatchStart = async () => {
@@ -349,9 +359,24 @@ export function IngestScreen({ onBack, onDone }: Props) {
                 </div>
                 <input ref={fileInputRef} type="file" accept=".md,.txt" multiple className="hidden" onChange={handleFileSelect} />
                 <ul className="text-xs text-gray-600 space-y-0.5 max-h-64 overflow-y-auto border border-gray-100 rounded p-2">
-                  {batchFiles.map(pf => (
-                    <li key={pf.file.name} className="truncate">
-                      <span className="text-gray-400 mr-1">第{pf.globalChapter}章</span>{pf.title}
+                  {batchFiles.map((pf, idx) => (
+                    <li key={pf.file.name} className="flex items-center gap-1 py-0.5">
+                      <span className="text-gray-400 w-8 shrink-0 font-mono">#{pf.globalChapter}</span>
+                      <span className="flex-1 truncate">{pf.title || pf.file.name}</span>
+                      <div className="flex shrink-0">
+                        <button
+                          className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-indigo-600 disabled:opacity-20 disabled:cursor-default"
+                          disabled={idx === 0}
+                          onClick={() => moveFile(idx, -1)}
+                          title="上へ"
+                        >↑</button>
+                        <button
+                          className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-indigo-600 disabled:opacity-20 disabled:cursor-default"
+                          disabled={idx === batchFiles.length - 1}
+                          onClick={() => moveFile(idx, 1)}
+                          title="下へ"
+                        >↓</button>
+                      </div>
                     </li>
                   ))}
                 </ul>
