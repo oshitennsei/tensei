@@ -10,10 +10,20 @@ interface Props {
   onAdd: () => void;
 }
 
+function deriveAuthorizationUrl(charUrl: string): string | null {
+  // Match tensei-authors URL pattern
+  const match = charUrl.match(
+    /^(https:\/\/raw\.githubusercontent\.com\/[^/]+\/tensei-authors\/[^/]+\/works\/[^/]+)\/characters\/[^/]+\.json$/
+  );
+  if (!match) return null;
+  return `${match[1]}/authorization.json`;
+}
+
 export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [extIds, setExtIds] = useState<Set<string>>(new Set());
   const [authorProvidedIds, setAuthorProvidedIds] = useState<Set<string>>(new Set());
+  const [verifiedWorkIds, setVerifiedWorkIds] = useState<Set<string>>(new Set());
   const [importError, setImportError] = useState("");
   const [importOk, setImportOk] = useState("");
   const [showUrlImport, setShowUrlImport] = useState(false);
@@ -22,13 +32,17 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reload = async () => {
-    const [chars, exts] = await Promise.all([
+    const [chars, exts, auths] = await Promise.all([
       db.entities.where("work_id").equals(work.id).filter(e => e.type === "character").toArray(),
       db.characters_extended.where("work_id").equals(work.id).toArray(),
+      db.authorizations_local.toArray(),
     ]);
     setCharacters(chars.sort((a, b) => (a.first_appearance ?? 99) - (b.first_appearance ?? 99)));
     setExtIds(new Set(exts.map(e => e.id)));
     setAuthorProvidedIds(new Set(exts.filter(e => e.author_provided).map(e => e.id)));
+    setVerifiedWorkIds(new Set(
+      auths.filter(a => a.status === "active" && a.work_identifier === work.id).map(a => a.work_identifier)
+    ));
   };
 
   useEffect(() => { reload(); }, [work.id]);
@@ -146,6 +160,27 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
         setImportError("JSONの解析に失敗しました。"); return;
       }
       await importFromJson(json);
+
+      // Try to fetch authorization record
+      const authUrl = deriveAuthorizationUrl(url);
+      if (authUrl) {
+        try {
+          const authRes = await fetch(authUrl);
+          if (authRes.ok) {
+            const authRecord = await authRes.json() as Record<string, unknown>;
+            const status = (authRecord.status as string) ?? "active";
+            await db.authorizations_local.put({
+              work_identifier: work.id,
+              full_authorization_record: authRecord,
+              last_synced_at: Date.now(),
+              status: status as "active" | "suspended" | "revoked",
+            });
+          }
+        } catch {
+          // Authorization fetch is best-effort; don't fail the import
+        }
+      }
+
       setUrlInput("");
       setShowUrlImport(false);
     } catch (err) {
@@ -213,6 +248,9 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
                     )}
                     {authorProvidedIds.has(c.id) && (
                       <span className="text-xs text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">公式</span>
+                    )}
+                    {authorProvidedIds.has(c.id) && verifiedWorkIds.size > 0 && (
+                      <span className="text-xs text-green-600 bg-green-50 rounded px-1.5 py-0.5">認証済</span>
                     )}
                   </div>
                   {c.description && (

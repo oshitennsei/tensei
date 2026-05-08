@@ -659,6 +659,18 @@ export async function analyzeChapter(
     key_events: result.key_events ?? [],
   });
 
+  // Embed chapter summary for faster chapter-level retrieval
+  const summaryForEmbedding = result.summaries?.short ?? "";
+  if (summaryForEmbedding) {
+    const embedder = await getEmbedder();
+    if (embedder) {
+      try {
+        const [emb] = await embedder([summaryForEmbedding]);
+        await db.chapters.update(chapter.id, { embedding_summary: emb });
+      } catch {}
+    }
+  }
+
   // Process character state updates (auto snapshots)
   for (const update of result.character_updates ?? []) {
     if (!update.name || !update.state_note) continue;

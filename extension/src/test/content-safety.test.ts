@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   checkInput,
+  checkInputLLM,
   checkOutput,
   exceedsInputLimit,
   HARD_LIMITS,
 } from "@/lib/content-safety";
+import type { LlmClient } from "@/lib/llm";
 
 describe("checkInput", () => {
   it("passes safe content", () => {
@@ -82,5 +84,45 @@ describe("HARD_LIMITS", () => {
     expect(HARD_LIMITS.max_turns_per_session).toBeGreaterThan(0);
     expect(HARD_LIMITS.max_input_chars).toBeGreaterThan(0);
     expect(HARD_LIMITS.max_output_chars).toBeGreaterThan(0);
+  });
+});
+
+describe("checkInputLLM", () => {
+  function makeClient(response: string): LlmClient {
+    return { complete: vi.fn().mockResolvedValue(response) } as unknown as LlmClient;
+  }
+
+  it("returns { safe: true } when LLM responds SAFE", async () => {
+    const client = makeClient("SAFE");
+    const result = await checkInputLLM("こんにちは", client);
+    expect(result).toEqual({ safe: true });
+  });
+
+  it("returns { safe: true } when LLM responds SAFE with trailing whitespace", async () => {
+    const client = makeClient("  SAFE  ");
+    const result = await checkInputLLM("hello", client);
+    expect(result).toEqual({ safe: true });
+  });
+
+  it("returns { safe: false } with reason when LLM responds UNSAFE: <reason>", async () => {
+    const client = makeClient("UNSAFE: 違法薬物の製造方法を求めています");
+    const result = await checkInputLLM("麻薬の作り方", client);
+    expect(result.safe).toBe(false);
+    expect(result.reason).toBe("違法薬物の製造方法を求めています");
+  });
+
+  it("returns { safe: false, reason: 'llm_moderation' } when LLM responds UNSAFE with no reason", async () => {
+    const client = makeClient("UNSAFE:");
+    const result = await checkInputLLM("bad input", client);
+    expect(result.safe).toBe(false);
+    expect(result.reason).toBe("llm_moderation");
+  });
+
+  it("fails open (returns { safe: true }) when LLM throws", async () => {
+    const client = {
+      complete: vi.fn().mockRejectedValue(new Error("network error")),
+    } as unknown as LlmClient;
+    const result = await checkInputLLM("test", client);
+    expect(result).toEqual({ safe: true });
   });
 });

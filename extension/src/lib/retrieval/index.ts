@@ -17,6 +17,9 @@ function toFloat32Array(v: unknown): Float32Array | undefined {
   if (!v) return undefined;
   if (v instanceof Float32Array) return v;
   if (v instanceof ArrayBuffer) return new Float32Array(v);
+  if (Array.isArray(v) && v.length > 0 && typeof v[0] === "number") {
+    return new Float32Array(v);
+  }
   return undefined;
 }
 
@@ -122,9 +125,10 @@ export async function retrieveEntities(
     .map(r => r.entity);
 }
 
-async function retrieveChunksByEmbedding(
+async function retrieveChunksHybrid(
   work_id: string,
-  queryEmbedding: Float32Array,
+  query: string,
+  queryEmbedding: Float32Array | null,
   cutoff_chapter: number,
   top_k = 5,
   character_id?: string,
@@ -134,25 +138,68 @@ async function retrieveChunksByEmbedding(
     .filter(c => c.chapter_number <= cutoff_chapter)
     .toArray();
 
-  // Same prioritization as keyword: character chapters + recent
-  const charChapters = character_id
-    ? chapters.filter(c => c.appearing_characters.includes(character_id))
-    : chapters;
-  const recent = chapters.slice(-15);
-  const searchSet = new Map([...charChapters, ...recent].map(c => [c.id, c]));
-  const searchChapterIds = [...searchSet.keys()];
+  // Pre-filter chapters using chapter-level embeddings if available
+  let relevantChapterIds: Set<string>;
 
-  const chunks = searchChapterIds.length > 0
-    ? await db.chunks.where("chapter_id").anyOf(searchChapterIds).toArray()
+  if (queryEmbedding && chapters.some(c => c.embedding_summary)) {
+    // Score chapters by embedding similarity
+    const chapterScores = chapters.map(c => {
+      const emb = toFloat32Array(c.embedding_summary);
+      return { c, embScore: emb ? cosineSimilarity(queryEmbedding, emb) : 0 };
+    });
+
+    // Character chapters + top embedding chapters + recent chapters
+    const charChapters = character_id
+      ? chapters.filter(c => c.appearing_characters.includes(character_id))
+      : [];
+    const topByEmbedding = chapterScores
+      .sort((a, b) => b.embScore - a.embScore)
+      .slice(0, 15)
+      .map(x => x.c);
+    const recent = chapters.slice(-5);
+
+    const combined = new Map([...charChapters, ...topByEmbedding, ...recent].map(c => [c.id, c]));
+    relevantChapterIds = new Set(combined.keys());
+  } else {
+    // Fallback: character chapters + recent
+    const charChapters = character_id
+      ? chapters.filter(c => c.appearing_characters.includes(character_id))
+      : chapters;
+    const recent = chapters.slice(-10);
+    const combined = new Map([...charChapters, ...recent].map(c => [c.id, c]));
+    relevantChapterIds = new Set(combined.keys());
+  }
+
+  const chunks = relevantChapterIds.size > 0
+    ? await db.chunks.where("chapter_id").anyOf([...relevantChapterIds]).toArray()
     : [];
 
-  const results: RetrievalResult[] = [];
-  for (const chunk of chunks) {
-    const emb = toFloat32Array(chunk.embedding);
-    if (!emb) continue;
-    results.push({ chunk, score: cosineSimilarity(queryEmbedding, emb) });
-  }
-  return results.sort((a, b) => b.score - a.score).slice(0, top_k);
+  const queryTokens = tokenize(query);
+  const KEYWORD_WEIGHT = 0.35;
+  const EMBEDDING_WEIGHT = 0.65;
+
+  const results: RetrievalResult[] = chunks.map(chunk => {
+    const kwScore = keywordScore(queryTokens, chunk.text);
+
+    let embScore = 0;
+    if (queryEmbedding) {
+      const emb = toFloat32Array(chunk.embedding);
+      if (emb) embScore = Math.max(0, cosineSimilarity(queryEmbedding, emb));
+    }
+
+    // If no embeddings at all, use keyword only
+    const hasAnyEmbedding = queryEmbedding !== null;
+    const score = hasAnyEmbedding
+      ? EMBEDDING_WEIGHT * embScore + KEYWORD_WEIGHT * kwScore
+      : kwScore;
+
+    return { chunk, score };
+  });
+
+  return results
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, top_k);
 }
 
 export async function buildContext(
@@ -169,10 +216,7 @@ export async function buildContext(
   }
 
   const [chunks, relatedEntities, character, characterExt, allChapters] = await Promise.all([
-    queryEmbedding
-      ? retrieveChunksByEmbedding(work_id, queryEmbedding, cutoff_chapter, 5, character_id)
-          .then(r => r.length >= 2 ? r : retrieveChunks(work_id, query, cutoff_chapter, 5, character_id))
-      : retrieveChunks(work_id, query, cutoff_chapter, 5, character_id),
+    retrieveChunksHybrid(work_id, query, queryEmbedding, cutoff_chapter, 5, character_id),
     retrieveEntities(work_id, query, 5),
     db.entities.get(character_id),
     db.characters_extended.get(character_id),

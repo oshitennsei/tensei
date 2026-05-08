@@ -3,7 +3,7 @@ import type { ChatMessage } from "@/lib/llm";
 import { addTurn, buildSessionContext, sessionToMessages, getOrCreateSession, createNewSession } from "@/lib/memory";
 import { buildContext } from "@/lib/retrieval";
 import { buildReaderPersonaText } from "@/lib/persona";
-import { checkInput, checkOutput, exceedsInputLimit, HARD_LIMITS } from "@/lib/content-safety";
+import { checkInput, checkInputLLM, checkOutput, exceedsInputLimit, HARD_LIMITS } from "@/lib/content-safety";
 import { db } from "@/lib/storage";
 import type { Session, Turn, Language } from "@/lib/storage";
 
@@ -66,6 +66,15 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const inputCheck = checkInput(user_message);
   if (!inputCheck.safe) {
     return { ok: false, error: { type: "safety", message: "そのメッセージは送信できません。" } };
+  }
+
+  // Phase 3: LLM-based moderation (optional — skipped if no sub_agent configured)
+  const subagentForMod = await LlmClient.forRole("sub_agent");
+  if (subagentForMod) {
+    const llmCheck = await checkInputLLM(user_message, subagentForMod);
+    if (!llmCheck.safe) {
+      return { ok: false, error: { type: "safety", message: "そのメッセージは送信できません。" } };
+    }
   }
 
   const client = await LlmClient.forRole("main");
