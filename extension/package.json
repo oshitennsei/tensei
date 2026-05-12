@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite --config vite.web.config.ts",
     "build": "vite build",
     "zip": "cd dist && zip -r ../tensei-extension.zip . && echo 'Zipped to tensei-extension.zip'",
     "test": "vitest",

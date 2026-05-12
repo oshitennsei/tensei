@@ -1,17 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "../components/Button";
-import { getOrCreateSkill, createBtsSession, btsChat, appendBtsTurn, listBtsSessions } from "@/lib/bts";
+import { getOrCreateSkill, createBtsSession, btsChat, appendBtsTurn, listBtsSessions, generateCrewInterjection } from "@/lib/bts";
 import { db } from "@/lib/storage";
-import type { Work, PerformanceSession, PerformerSkill, Entity, BtsSession, BtsTurn } from "@/lib/storage";
+import type { Work, PerformanceSession, PerformerSkill, Entity, BtsSession, BtsTurn, BtsLocation, BtsCrewMember } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
   performanceSession: PerformanceSession;
   onBack: () => void;
+  initialSession?: BtsSession;
+  initialLocation?: BtsLocation;
+  initialCrew?: BtsCrewMember[];
 }
 
 interface DisplayMessage {
-  role: "user" | "performer";
+  role: "user" | "performer" | "crew";
   speakerName: string;
   content: string;
 }
@@ -21,7 +25,8 @@ interface SkillWithEntity {
   entity: Entity;
 }
 
-export function BtsScreen({ work, performanceSession, onBack }: Props) {
+export function BtsScreen({ work, performanceSession, onBack, initialSession, initialLocation, initialCrew }: Props) {
+  const str = useStrings();
   const [btsSession, setBtsSession] = useState<BtsSession | null>(null);
   const [skills, setSkills] = useState<SkillWithEntity[]>([]);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
@@ -30,14 +35,22 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [crewVisible, setCrewVisible] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const locationLabel = (loc: BtsLocation): string => {
+    if (loc === "rest_area")   return str.bts_loc_rest_label;
+    if (loc === "makeup_room") return str.bts_loc_makeup_label;
+    if (loc === "set")         return str.bts_loc_set_label;
+    if (loc === "cafeteria")   return str.bts_loc_cafeteria_label;
+    return loc;
+  };
 
   useEffect(() => {
     const load = async () => {
       const characterIds = performanceSession.characters_in_scene;
 
-      // Load skills and entities for each character
       const skillsWithEntities: SkillWithEntity[] = [];
       for (const charId of characterIds) {
         const [skill, entity] = await Promise.all([
@@ -54,21 +67,28 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
         setSelectedSkillId(skillsWithEntities[0].skill.id);
       }
 
-      // Find or create BTS session
-      const existingSessions = await listBtsSessions(work.id);
       let session: BtsSession;
-      if (existingSessions.length > 0) {
-        session = existingSessions[0];
+      if (initialSession) {
+        session = initialSession;
       } else {
-        session = await createBtsSession(work.id, performanceSession.characters_in_scene);
+        const existingSessions = await listBtsSessions(work.id);
+        session = existingSessions.length > 0
+          ? existingSessions[0]
+          : await createBtsSession(
+              work.id,
+              performanceSession.characters_in_scene,
+              initialLocation ?? "rest_area",
+              initialCrew ?? []
+            );
       }
       setBtsSession(session);
 
-      // Map conversation history to display messages
       const displayMessages: DisplayMessage[] = session.conversation_history.map((turn: BtsTurn) => {
-        const isUser = turn.speaker_skill_id === "user";
-        if (isUser) {
-          return { role: "user" as const, speakerName: "あなた", content: turn.content };
+        if (turn.speaker_skill_id === "user") {
+          return { role: "user" as const, speakerName: str.bts_you, content: turn.content };
+        }
+        if (turn.speaker_skill_id === "crew") {
+          return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
         }
         const matchedSkill = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
         const speakerName = matchedSkill?.entity.canonical_name ?? turn.speaker_skill_id;
@@ -78,7 +98,7 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
     };
 
     load();
-  }, [work.id, performanceSession.characters_in_scene.join(",")]);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -94,11 +114,9 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
     setInput("");
     setError(null);
 
-    // Add user message to display
-    setMessages(prev => [...prev, { role: "user", speakerName: "あなた", content: userMessage }]);
+    setMessages(prev => [...prev, { role: "user", speakerName: str.bts_you, content: userMessage }]);
     setStreaming(true);
 
-    // Save user turn to DB
     const userTurn: BtsTurn = {
       speaker_skill_id: "user",
       content: userMessage,
@@ -115,7 +133,6 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
         setStreamingText(accumulated);
       }
 
-      // Save performer turn
       const performerTurn: BtsTurn = {
         speaker_skill_id: selectedSkillId,
         content: accumulated,
@@ -128,9 +145,21 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
         { role: "performer", speakerName: selectedEntityName, content: accumulated },
       ]);
       setStreamingText("");
+
+      const lastExchange = `${userMessage}\n${accumulated}`;
+      const crewLine = await generateCrewInterjection(btsSession, lastExchange);
+      if (crewLine) {
+        const crewTurn: BtsTurn = {
+          speaker_skill_id: "crew",
+          content: crewLine,
+          timestamp: Date.now(),
+        };
+        await appendBtsTurn(btsSession.id, crewTurn);
+        setMessages(prev => [...prev, { role: "crew", speakerName: str.bts_staff, content: crewLine }]);
+      }
     } catch (e: unknown) {
       if ((e as Error)?.name !== "AbortError") {
-        setError("エラーが発生しました。");
+        setError(str.bts_error);
         setStreamingText("");
       }
     } finally {
@@ -149,7 +178,7 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 shrink-0">
         <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
-        <p className="text-sm font-semibold flex-1">楽屋</p>
+        <p className="text-sm font-semibold flex-1">{str.bts_title}</p>
       </header>
 
       {/* Performer tabs */}
@@ -171,10 +200,32 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
         </div>
       )}
 
+      {/* Crew section (collapsible) */}
+      {btsSession && btsSession.present_crew.length > 0 && (
+        <div className="border-b border-gray-100 shrink-0">
+          <button
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+            onClick={() => setCrewVisible(v => !v)}
+          >
+            <span>{str.bts_crew_label(btsSession.present_crew.length)}</span>
+            <span>{crewVisible ? "▲" : "▼"}</span>
+          </button>
+          {crewVisible && (
+            <div className="px-3 pb-2 space-y-0.5">
+              {btsSession.present_crew.map((m, i) => (
+                <p key={i} className="text-xs text-gray-400">
+                  <span className="font-medium">{m.name}</span>（{m.role}）— {m.persona_snippet}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Status line */}
       <div className="px-3 py-1.5 border-b border-gray-100 shrink-0">
         <p className="text-xs text-gray-400">
-          楽屋 (rest_area){selectedEntityName ? ` · ${selectedEntityName} と話す` : ""}
+          {locationLabel(btsSession?.location ?? "rest_area")}{selectedEntityName ? str.bts_talk_to(selectedEntityName) : ""}
         </p>
       </div>
 
@@ -182,7 +233,7 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && !streamingText && (
           <p className="text-center text-xs text-gray-400 mt-8">
-            楽屋でキャラクターと話しましょう。
+            {str.bts_empty}
           </p>
         )}
         {messages.map((msg, i) => (
@@ -204,7 +255,7 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="メッセージを入力..."
+            placeholder={str.bts_placeholder}
             className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -217,7 +268,7 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
             disabled={streaming || !input.trim()}
             className="self-end"
           >
-            送信
+            {str.bts_send}
           </Button>
         </div>
       </div>
@@ -226,6 +277,7 @@ export function BtsScreen({ work, performanceSession, onBack }: Props) {
 }
 
 function MessageBubble({ message }: { message: DisplayMessage }) {
+  if (message.role === "crew") return <CrewBubble content={message.content} />;
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -245,10 +297,20 @@ function PerformerBubble({ name, content, streaming }: { name: string; content: 
     <div className="flex justify-start">
       <div className="max-w-[85%]">
         {name && <p className="text-xs text-gray-400 mb-0.5">{name}</p>}
-        <div className={`rounded-tr-xl rounded-br-xl rounded-bl-xl px-3 py-2 text-sm whitespace-pre-wrap break-words bg-white/80 text-gray-800`}>
+        <div className="rounded-tr-xl rounded-br-xl rounded-bl-xl px-3 py-2 text-sm whitespace-pre-wrap break-words bg-white/80 text-gray-800">
           {content || (streaming && <span className="animate-pulse">▋</span>)}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CrewBubble({ content }: { content: string }) {
+  return (
+    <div className="flex justify-center my-1">
+      <p className="text-xs text-gray-400 italic bg-gray-50 rounded px-2 py-1 max-w-[90%]">
+        {content}
+      </p>
     </div>
   );
 }

@@ -6,6 +6,16 @@ import { buildReaderPersonaText } from "@/lib/persona";
 import { checkInput, checkInputLLM, checkOutput, exceedsInputLimit, HARD_LIMITS } from "@/lib/content-safety";
 import { db } from "@/lib/storage";
 import type { Session, Turn, Language } from "@/lib/storage";
+import { getStrings, langFromStorage } from "@/lib/i18n";
+
+function parseOOC(message: string): { clean: string; direction: string | null } {
+  const directions: string[] = [];
+  const clean = message.replace(/\(([^)]+)\)/g, (_, inner) => {
+    directions.push(inner.trim());
+    return "";
+  }).replace(/\s+/g, " ").trim();
+  return { clean, direction: directions.length > 0 ? directions.join("\n") : null };
+}
 
 async function extractRetrievalQuery(
   user_message: string,
@@ -82,11 +92,16 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     return { ok: false, error: { type: "no_llm", message: "LLM APIが設定されていません。設定画面からAPIキーを入力してください。" } };
   }
 
-  // Step 1: fetch character (needed for keyword extraction prompt)
-  const [character, characterExt] = await Promise.all([
+  // Step 1: fetch character + app settings in parallel
+  const [character, characterExt, appSettings] = await Promise.all([
     db.entities.get(session.character_id),
     db.characters_extended.get(session.character_id),
+    db.app_settings.get("global"),
   ]);
+
+  const uiLang = (appSettings?.ui_language ?? "ja") as Language;
+  const s = getStrings(langFromStorage(uiLang));
+  const debugMode = appSettings?.plan_debug_mode ?? false;
 
   // Step 2: keyword extraction + session/persona — all parallel
   const [ragQuery, sessionContext, personaText] = await Promise.all([
@@ -95,107 +110,112 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     buildReaderPersonaText(session.work_id),
   ]);
 
+  // Reduce RAG chunk count when conversation has substantial history
+  // (compression summaries mean context is already rich; novel chunks are less critical)
+  const ragTopK = session.tier_1_paragraph_summaries.length > 0 ? 2 : 5;
+
   // Step 3: RAG with the improved query
   const ragContext = await buildContext(
     session.work_id, session.character_id, ragQuery,
     session.cutoff_chapter, session.character_version_id,
+    uiLang, ragTopK,
   );
 
   // Apply character version overrides for the system prompt
   const snapshot = session.character_version_id && session.character_version_id !== "base" && characterExt
-    ? characterExt.state_snapshots.find(s => s.id === session.character_version_id)
+    ? characterExt.state_snapshots.find(snap => snap.id === session.character_version_id)
     : undefined;
   const effectivePersona = snapshot?.persona_override ?? characterExt?.persona ?? "";
   const effectiveSpeechStyle = snapshot?.speech_style_override ?? characterExt?.speech_style;
 
   // Build character arc history from auto-generated snapshots up to cutoff
-  function buildCharacterHistory(ext: typeof characterExt, cutoff: number, lang: string): string {
+  function buildCharacterHistory(ext: typeof characterExt, cutoff: number): string {
     if (!ext) return "";
     const relevant = ext.state_snapshots
-      .filter(s => s.at_chapter != null && s.at_chapter <= cutoff && s.label && !s.is_selectable)
+      .filter(snap => snap.at_chapter != null && snap.at_chapter <= cutoff && snap.label && !snap.is_selectable)
       .sort((a, b) => a.at_chapter - b.at_chapter);
     if (relevant.length === 0) return "";
 
-    const isChinese = lang === "zh-tw" || lang === "zh-cn" || lang === "zh";
-    const header = isChinese
-      ? `## 你截至目前的經歷與成長（第${cutoff}章為止）`
-      : `## これまでの経緯と成長（第${cutoff}章まで）`;
+    const header = s.chat_char_history_header(cutoff);
 
-    const lines = relevant.map(s => {
-      const ch = isChinese ? `第${s.at_chapter}章` : `第${s.at_chapter}章`;
-      const emotion = s.emotional_state ? `（情緒：${s.emotional_state}）` : "";
-      const knowledge = s.knowledge?.length ? `\n  獲知：${s.knowledge.join("、")}` : "";
-      const rels = s.relationships && Object.keys(s.relationships).length > 0
-        ? `\n  關係變化：${Object.entries(s.relationships).map(([k, v]) => `${k}→${v}`).join("、")}`
+    const lines = relevant.map(snap => {
+      const ch = `第${snap.at_chapter}章`;
+      const emotion = snap.emotional_state ? `（情緒：${snap.emotional_state}）` : "";
+      const knowledge = snap.knowledge?.length ? `\n  獲知：${snap.knowledge.join("、")}` : "";
+      const rels = snap.relationships && Object.keys(snap.relationships).length > 0
+        ? `\n  關係変化：${Object.entries(snap.relationships).map(([k, v]) => `${k}→${v}`).join("、")}`
         : "";
-      return `- ${ch}：${s.label}${emotion}${knowledge}${rels}`;
+      return `- ${ch}：${snap.label}${emotion}${knowledge}${rels}`;
     });
 
     return `${header}\n${lines.join("\n")}`;
   }
 
-  const work = await db.works.get(session.work_id);
-  const lang = work?.language ?? "ja";
   const glossary = await db.work_glossaries.get(session.work_id);
 
   const systemParts: string[] = [];
 
   if (character && characterExt) {
     systemParts.push(
-      `あなたは「${character.canonical_name}」というキャラクターです。`,
+      s.chat_char_intro(character.canonical_name),
       effectivePersona,
     );
-    if (effectiveSpeechStyle) systemParts.push(`話し方の特徴: ${effectiveSpeechStyle}`);
+    if (effectiveSpeechStyle) systemParts.push(`${s.chat_speech_style_prefix}${effectiveSpeechStyle}`);
 
-    const history = buildCharacterHistory(characterExt, session.cutoff_chapter, lang);
+    const history = buildCharacterHistory(characterExt, session.cutoff_chapter);
     if (history) systemParts.push(history);
 
     if (characterExt.voice_samples.length > 0) {
-      const samples = characterExt.voice_samples.slice(0, 6).map(s =>
-        s.context ? `【状況】${s.context}\n「${s.line}」` : `「${s.line}」`
+      const samples = characterExt.voice_samples.slice(0, 6).map(vs =>
+        vs.context ? `【状況】${vs.context}\n「${vs.line}」` : `「${vs.line}」`
       ).join("\n\n");
-      systemParts.push(`## 典型的な話し方\n${samples}`);
+      systemParts.push(`${s.chat_voice_samples_header}\n${samples}`);
     }
     if (characterExt.dialogue_examples && characterExt.dialogue_examples.length > 0) {
       const examples = characterExt.dialogue_examples.slice(0, 3).map(ex =>
-        `状況: ${ex.context}\n読者: ${ex.user_message_pattern}\n${character!.canonical_name}: ${ex.ideal_response}`
+        `${s.chat_example_context}${ex.context}\n${s.chat_example_reader_label}${ex.user_message_pattern}\n${character!.canonical_name}: ${ex.ideal_response}`
       ).join("\n\n---\n\n");
-      systemParts.push(`## 会話例\n${examples}`);
+      systemParts.push(`${s.chat_dialogue_examples_header}\n${examples}`);
     }
     if (characterExt.will_do.length > 0) {
-      systemParts.push("以下のことを積極的に行います:\n" + characterExt.will_do.map(d => `- ${d}`).join("\n"));
+      systemParts.push(`${s.chat_will_do_header}\n` + characterExt.will_do.map(d => `- ${d}`).join("\n"));
     }
     if (characterExt.will_not_do.length > 0) {
-      systemParts.push("以下のことは絶対に行いません:\n" + characterExt.will_not_do.map(d => `- ${d}`).join("\n"));
+      systemParts.push(`${s.chat_will_not_do_header}\n` + characterExt.will_not_do.map(d => `- ${d}`).join("\n"));
     }
     if (characterExt.forbidden_topics.length > 0) {
-      systemParts.push("以下のトピックには応答しません:\n" + characterExt.forbidden_topics.map(t => `- ${t}`).join("\n"));
+      systemParts.push(`${s.chat_forbidden_topics_header}\n` + characterExt.forbidden_topics.map(t => `- ${t}`).join("\n"));
     }
   }
 
-  if (glossary && glossary.entries.length > 0 && lang !== "ja") {
+  if (glossary && glossary.entries.length > 0 && uiLang !== "ja") {
     const table = glossary.entries
-      .filter(e => e.translations[lang as Language])
-      .map(e => `- ${e.original} → ${e.translations[lang as Language]}`)
+      .filter(e => e.translations[uiLang])
+      .map(e => `- ${e.original} → ${e.translations[uiLang]}`)
       .join("\n");
-    if (table) systemParts.push(`固有名詞対照表:\n${table}`);
+    if (table) systemParts.push(`${s.chat_glossary_header}\n${table}`);
   }
 
   if (ragContext) systemParts.push(ragContext);
   if (sessionContext) systemParts.push(sessionContext);
   if (personaText) systemParts.push(personaText);
 
+  // Parse OOC direction from user message — inject into prompt, store clean version
+  const { clean: cleanMessage, direction: oocDirection } = parseOOC(user_message);
+  if (oocDirection) systemParts.push(`${s.chat_ooc_direction_header}\n${oocDirection}`);
+
   systemParts.push(
-    `現在の章数制限: 第${session.cutoff_chapter}章まで。それ以降の出来事は知りません。`,
-    "キャラクターとして自然に会話してください。メタ的なコメントや「AIです」などの発言はしないでください。",
+    s.chat_chapter_limit(session.cutoff_chapter),
+    s.chat_instruction,
   );
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemParts.join("\n\n") },
     ...sessionToMessages(session),
-    { role: "user", content: user_message },
+    { role: "user", content: cleanMessage || user_message },
   ];
 
+  // Store the raw message (with OOC) so the UI can display the annotation
   await addTurn(session.id, { role: "user", content: user_message, timestamp: Date.now() });
 
   let accumulated = "";
@@ -208,7 +228,9 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     }
     const outputCheck = checkOutput(accumulated);
     if (outputCheck.safe && accumulated) {
-      await addTurn(session.id, { role: "character", content: accumulated, timestamp: Date.now() });
+      const charTurn: Turn = { role: "character", content: accumulated, timestamp: Date.now() };
+      if (debugMode) charTurn.debug_prompt = systemParts.join("\n\n");
+      await addTurn(session.id, charTurn);
     }
   }
 

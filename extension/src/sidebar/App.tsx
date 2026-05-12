@@ -11,9 +11,14 @@ import { IngestScreen } from "./screens/IngestScreen";
 import { DebugScreen } from "./screens/DebugScreen";
 import { PerformanceSetupScreen } from "./screens/PerformanceSetupScreen";
 import { PerformanceScreen } from "./screens/PerformanceScreen";
+import { SceneBriefScreen } from "./screens/SceneBriefScreen";
+import { ProductionPlanScreen } from "./screens/ProductionPlanScreen";
 import { BtsScreen } from "./screens/BtsScreen";
+import { BtsBriefScreen } from "./screens/BtsBriefScreen";
+import { WorkRegisterScreen } from "./screens/WorkRegisterScreen";
 import { BackgroundProvider, useBackground } from "./context/BackgroundContext";
-import type { Work, Session, PerformanceSession } from "@/lib/storage";
+import type { BtsSetup } from "@/lib/bts";
+import type { Work, Session, PerformanceSession, ProductionPlan, BtsSession, BtsLocation, BtsCrewMember } from "@/lib/storage";
 
 type Screen =
   | { name: "home" }
@@ -27,8 +32,12 @@ type Screen =
   | { name: "ingest" }
   | { name: "debug" }
   | { name: "performance-setup"; work: Work }
+  | { name: "scene-brief"; work: Work; session: PerformanceSession }
+  | { name: "production-plan"; work: Work; session: PerformanceSession; plan: ProductionPlan }
   | { name: "performance"; work: Work; session: PerformanceSession }
-  | { name: "bts"; work: Work; performanceSession: PerformanceSession };
+  | { name: "bts-brief"; work: Work; performanceSession: PerformanceSession }
+  | { name: "bts"; work: Work; performanceSession: PerformanceSession; initialSession?: BtsSession; initialLocation?: BtsLocation; initialCrew?: BtsCrewMember[] }
+  | { name: "work-register" };
 
 function getWorkId(s: Screen): string | undefined {
   switch (s.name) {
@@ -38,7 +47,10 @@ function getWorkId(s: Screen): string | undefined {
     case "characters":
     case "character-edit":
     case "performance-setup":
+    case "scene-brief":
+    case "production-plan":
     case "performance":
+    case "bts-brief":
     case "bts":
       return s.work.id;
     default:
@@ -54,6 +66,7 @@ function ExpandButton() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   if (!isSidePanel) return null;
+  if (typeof chrome === 'undefined' || !chrome.windows) return null;
   const open = () => chrome.windows.create({
     url: chrome.runtime.getURL("src/sidebar/index.html"),
     type: "popup",
@@ -89,6 +102,7 @@ function AppContent() {
           onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
           onWorkDeleted={() => setScreen({ name: "home" })}
           onPerformance={() => setScreen({ name: "performance-setup", work: screen.work })}
+          onResumePerformance={session => setScreen({ name: "performance", work: screen.work, session })}
         />
       );
     }
@@ -97,8 +111,31 @@ function AppContent() {
         <PerformanceSetupScreen
           work={screen.work}
           onBack={() => setScreen({ name: "work", work: screen.work })}
-          onStart={session => setScreen({ name: "performance", work: screen.work, session })}
+          onStart={session => setScreen({ name: "scene-brief", work: screen.work, session })}
           onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
+        />
+      );
+    }
+    if (screen.name === "scene-brief") {
+      return (
+        <SceneBriefScreen
+          work={screen.work}
+          session={screen.session}
+          onBack={() => setScreen({ name: "performance-setup", work: screen.work })}
+          onPlanReady={(plan, updatedSession) =>
+            setScreen({ name: "production-plan", work: screen.work, session: updatedSession, plan })
+          }
+        />
+      );
+    }
+    if (screen.name === "production-plan") {
+      return (
+        <ProductionPlanScreen
+          work={screen.work}
+          session={screen.session}
+          plan={screen.plan}
+          onBack={() => setScreen({ name: "scene-brief", work: screen.work, session: screen.session })}
+          onStart={_plan => setScreen({ name: "performance", work: screen.work, session: screen.session })}
         />
       );
     }
@@ -108,7 +145,26 @@ function AppContent() {
           work={screen.work}
           session={screen.session}
           onBack={() => setScreen({ name: "work", work: screen.work })}
-          onGoBackstage={session => setScreen({ name: "bts", work: screen.work, performanceSession: session })}
+          onGoBackstage={session => setScreen({ name: "bts-brief", work: screen.work, performanceSession: session })}
+        />
+      );
+    }
+    if (screen.name === "bts-brief") {
+      return (
+        <BtsBriefScreen
+          work={screen.work}
+          performanceSession={screen.performanceSession}
+          onBack={() => setScreen({ name: "performance", work: screen.work, session: screen.performanceSession })}
+          onReady={(setup: BtsSetup, session: BtsSession) =>
+            setScreen({
+              name: "bts",
+              work: screen.work,
+              performanceSession: screen.performanceSession,
+              initialSession: session,
+              initialLocation: setup.location,
+              initialCrew: setup.crew,
+            })
+          }
         />
       );
     }
@@ -117,7 +173,10 @@ function AppContent() {
         <BtsScreen
           work={screen.work}
           performanceSession={screen.performanceSession}
-          onBack={() => setScreen({ name: "performance", work: screen.work, session: screen.performanceSession })}
+          onBack={() => setScreen({ name: "bts-brief", work: screen.work, performanceSession: screen.performanceSession })}
+          initialSession={screen.initialSession}
+          initialLocation={screen.initialLocation}
+          initialCrew={screen.initialCrew}
         />
       );
     }
@@ -182,11 +241,15 @@ function AppContent() {
     if (screen.name === "debug") {
       return <DebugScreen onBack={() => setScreen({ name: "settings" })} />;
     }
+    if (screen.name === "work-register") {
+      return <WorkRegisterScreen onBack={() => setScreen({ name: "home" })} />;
+    }
     return (
       <HomeScreen
         onSelectWork={work => setScreen({ name: "work", work })}
         onIngest={() => setScreen({ name: "ingest" })}
         onSettings={() => setScreen({ name: "settings" })}
+        onWorkRegister={() => setScreen({ name: "work-register" })}
       />
     );
   })();

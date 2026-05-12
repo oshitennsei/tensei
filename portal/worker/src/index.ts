@@ -4,14 +4,18 @@ import { registerRoutes } from "./routes/register";
 import { verifyRoutes } from "./routes/verify";
 import { adminRoutes } from "./routes/admin";
 import { statusRoutes } from "./routes/status";
+import { whitelist } from "./routes/whitelist";
+import { authRoutes } from "./routes/auth";
 
 export interface Env {
   DB: D1Database;
   MAGIC_LINK_KV: KVNamespace;
   RESEND_API_KEY: string;
+  SENDER_EMAIL?: string;
   GITHUB_TOKEN: string;
   ADMIN_SECRET: string;
   FRONTEND_URL: string;
+  WORKER_URL: string;
   GITHUB_REPO_OWNER: string;
   GITHUB_REPO_NAME: string;
 }
@@ -26,9 +30,11 @@ app.use("*", cors({
 
 app.get("/", c => c.json({ name: "tensei-portal-api", version: "0.1.0" }));
 
-app.route("/register", registerRoutes);
-app.route("/verify",   verifyRoutes);
-app.route("/status",   statusRoutes);
-app.route("/admin",    adminRoutes);
+app.route("/register",  registerRoutes);
+app.route("/verify",    verifyRoutes);
+app.route("/auth",      authRoutes);
+app.route("/status",    statusRoutes);
+app.route("/admin",     adminRoutes);
+app.route("/whitelist", whitelist);
 
 export default app;

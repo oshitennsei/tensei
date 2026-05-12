@@ -1,21 +1,12 @@
 import { useState, useEffect } from "react";
 import { Button } from "../components/Button";
 import { listPersonas, savePersona, updatePersona, deletePersona } from "@/lib/persona";
-import type { Persona, Language } from "@/lib/storage";
+import type { Persona } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   onBack: () => void;
 }
-
-const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
-  { value: "ja",    label: "日本語" },
-  { value: "zh-tw", label: "繁體中文" },
-  { value: "zh-cn", label: "简体中文" },
-  { value: "zh",    label: "中文（自動）" },
-  { value: "en",    label: "English" },
-  { value: "ko",    label: "한국어" },
-  { value: "other", label: "その他" },
-];
 
 const BLANK: Omit<Persona, "id"> = {
   name: "",
@@ -26,6 +17,7 @@ const BLANK: Omit<Persona, "id"> = {
 };
 
 export function PersonaScreen({ onBack }: Props) {
+  const str = useStrings();
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK);
@@ -36,7 +28,7 @@ export function PersonaScreen({ onBack }: Props) {
 
   const startEdit = (p: Persona) => {
     setEditingId(p.id);
-    setForm({ name: p.name, language: p.language, content_md: p.content_md, applies_to: p.applies_to, is_default: p.is_default });
+    setForm({ name: p.name, language: p.language ?? "ja", content_md: p.content_md, applies_to: p.applies_to, is_default: p.is_default });
   };
 
   const cancelEdit = () => { setEditingId(null); setForm(BLANK); };
@@ -44,7 +36,7 @@ export function PersonaScreen({ onBack }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const data = { ...form, name: form.name || "デフォルト読者設定" };
+      const data = { ...form, name: form.name || str.persona_default_name };
       if (editingId) {
         await updatePersona(editingId, data);
       } else {
@@ -74,19 +66,17 @@ export function PersonaScreen({ onBack }: Props) {
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
-        <Button variant="ghost" size="sm" onClick={onBack}>← 戻る</Button>
-        <h2 className="text-sm font-semibold">読者設定</h2>
+        <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
+        <h2 className="text-sm font-semibold">{str.persona_title}</h2>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        <p className="text-xs text-gray-400">
-          キャラクターへの自己紹介や言語設定を登録できます。複数の設定を作品ごとに切り替えることもできます。
-        </p>
+        <p className="text-xs text-gray-400">{str.persona_desc}</p>
 
         {/* Existing personas */}
         {personas.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase">登録済み設定</h3>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase">{str.persona_list_title}</h3>
             <ul className="space-y-2">
               {personas.map(p => (
                 <li
@@ -98,13 +88,10 @@ export function PersonaScreen({ onBack }: Props) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium">{p.name || "（名前なし）"}</span>
+                        <span className="font-medium">{p.name || str.persona_no_name}</span>
                         {p.is_default && (
-                          <span className="text-xs bg-indigo-100 text-indigo-700 rounded px-1.5 py-0.5">デフォルト</span>
+                          <span className="text-xs bg-indigo-100 text-indigo-700 rounded px-1.5 py-0.5">{str.persona_default_badge}</span>
                         )}
-                        <span className="text-xs text-gray-400">
-                          {LANGUAGE_OPTIONS.find(l => l.value === p.language)?.label ?? p.language}
-                        </span>
                       </div>
                       {p.content_md && (
                         <p className="text-xs text-gray-500 mt-1 truncate">{p.content_md}</p>
@@ -113,13 +100,13 @@ export function PersonaScreen({ onBack }: Props) {
                     <div className="flex gap-1 shrink-0">
                       {!p.is_default && (
                         <Button variant="ghost" size="sm" onClick={() => handleSetDefault(p)}>
-                          既定に
+                          {str.persona_set_default}
                         </Button>
                       )}
                       <Button variant="ghost" size="sm" onClick={() => editingId === p.id ? cancelEdit() : startEdit(p)}>
-                        {editingId === p.id ? "キャンセル" : "編集"}
+                        {editingId === p.id ? str.persona_cancel : str.persona_edit}
                       </Button>
-                      <Button variant="danger" size="sm" onClick={() => handleDelete(p.id)}>削除</Button>
+                      <Button variant="danger" size="sm" onClick={() => handleDelete(p.id)}>{str.persona_delete}</Button>
                     </div>
                   </div>
                 </li>
@@ -131,41 +118,25 @@ export function PersonaScreen({ onBack }: Props) {
         {/* Form */}
         <section className="space-y-3">
           <h3 className="text-xs font-semibold text-gray-500 uppercase">
-            {isEditing ? "設定を編集" : "新しい設定を追加"}
+            {isEditing ? str.persona_form_editing : str.persona_form_new}
           </h3>
 
           <div>
-            <label className="block text-xs text-gray-600 mb-1">設定名（任意）</label>
+            <label className="block text-xs text-gray-600 mb-1">{str.persona_name_label}</label>
             <input
               className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              placeholder="例: 日本語読者, 中文読者"
+              placeholder={str.persona_name_ph}
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-600 mb-1">返答言語</label>
-            <select
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={form.language}
-              onChange={e => setForm(f => ({ ...f, language: e.target.value as Language }))}
-            >
-              {LANGUAGE_OPTIONS.map(l => (
-                <option key={l.value} value={l.value}>{l.label}</option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-400 mt-1">
-              キャラクターがこの言語で返答します。
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">自己紹介・読者プロフィール（任意）</label>
+            <label className="block text-xs text-gray-600 mb-1">{str.persona_content_label}</label>
             <textarea
               className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
               rows={4}
-              placeholder={"例:\n私はこの小説の熱心なファンです。\nキャラクターたちの日常的な会話を楽しみたいと思っています。"}
+              placeholder={str.persona_content_ph}
               value={form.content_md}
               onChange={e => setForm(f => ({ ...f, content_md: e.target.value }))}
             />
@@ -180,16 +151,16 @@ export function PersonaScreen({ onBack }: Props) {
               className="accent-indigo-600"
             />
             <label htmlFor="is_default" className="text-xs text-gray-600">
-              すべての作品でこの設定を既定として使う
+              {str.persona_default_check}
             </label>
           </div>
 
           <div className="flex gap-2">
             {isEditing && (
-              <Button variant="ghost" onClick={cancelEdit} className="flex-1">キャンセル</Button>
+              <Button variant="ghost" onClick={cancelEdit} className="flex-1">{str.persona_cancel}</Button>
             )}
             <Button onClick={handleSave} disabled={saving} className="flex-1">
-              {saving ? "保存中..." : isEditing ? "更新" : "保存"}
+              {saving ? str.persona_saving : isEditing ? str.persona_update : str.persona_save}
             </Button>
           </div>
         </section>

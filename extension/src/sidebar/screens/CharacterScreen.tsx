@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "../components/Button";
 import { db } from "@/lib/storage";
 import type { Work, Entity, CharacterExtended, GlossaryEntry } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
@@ -11,7 +12,6 @@ interface Props {
 }
 
 function deriveAuthorizationUrl(charUrl: string): string | null {
-  // Match tensei-authors URL pattern
   const match = charUrl.match(
     /^(https:\/\/raw\.githubusercontent\.com\/[^/]+\/tensei-authors\/[^/]+\/works\/[^/]+)\/characters\/[^/]+\.json$/
   );
@@ -20,6 +20,7 @@ function deriveAuthorizationUrl(charUrl: string): string | null {
 }
 
 export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
+  const str = useStrings();
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [extIds, setExtIds] = useState<Set<string>>(new Set());
   const [authorProvidedIds, setAuthorProvidedIds] = useState<Set<string>>(new Set());
@@ -48,7 +49,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
   useEffect(() => { reload(); }, [work.id]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("このキャラクターを削除しますか？")) return;
+    if (!confirm(str.char_delete_confirm)) return;
     await db.transaction("rw", [db.entities, db.characters_extended], async () => {
       await db.entities.delete(id);
       await db.characters_extended.delete(id);
@@ -58,9 +59,8 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
 
   const importFromJson = async (json: Record<string, unknown>) => {
     const name = String(json.canonical_name ?? "").trim();
-    if (!name) { setImportError("canonical_name が見つかりません。"); return; }
+    if (!name) { setImportError(str.char_no_canonical); return; }
 
-    // Find or create Entity
     const existing = await db.entities
       .where("work_id").equals(work.id)
       .filter(e => e.canonical_name === name)
@@ -111,7 +111,6 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
         const entries = json.glossary as GlossaryEntry[];
         const existingGlossary = await db.work_glossaries.get(work.id);
         if (existingGlossary) {
-          // merge: update existing entries, add new ones
           const merged = [...existingGlossary.entries];
           for (const e of entries) {
             const idx = merged.findIndex(x => x.original === e.original);
@@ -125,7 +124,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
       }
     });
 
-    setImportOk(`「${name}」をインポートしました。`);
+    setImportOk(str.char_imported(name));
     reload();
   };
 
@@ -139,7 +138,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
     try {
       json = JSON.parse(await file.text());
     } catch {
-      setImportError("JSONの解析に失敗しました。"); return;
+      setImportError(str.char_json_error); return;
     }
 
     await importFromJson(json);
@@ -152,16 +151,15 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
     setUrlImporting(true);
     try {
       const res = await fetch(url);
-      if (!res.ok) { setImportError(`取得に失敗しました: ${res.status}`); return; }
+      if (!res.ok) { setImportError(str.char_fetch_fail(res.status)); return; }
       let json: Record<string, unknown>;
       try {
         json = await res.json();
       } catch {
-        setImportError("JSONの解析に失敗しました。"); return;
+        setImportError(str.char_json_error); return;
       }
       await importFromJson(json);
 
-      // Try to fetch authorization record
       const authUrl = deriveAuthorizationUrl(url);
       if (authUrl) {
         try {
@@ -184,7 +182,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
       setUrlInput("");
       setShowUrlImport(false);
     } catch (err) {
-      setImportError(`取得エラー: ${String(err)}`);
+      setImportError(str.char_fetch_error(String(err)));
     } finally {
       setUrlImporting(false);
     }
@@ -193,11 +191,11 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
-        <Button variant="ghost" size="sm" onClick={onBack}>← 戻る</Button>
-        <h2 className="text-sm font-semibold flex-1">キャラクター管理</h2>
-        <Button variant="ghost" size="sm" onClick={() => setShowUrlImport(p => !p)}>URL読込</Button>
-        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>JSON読込</Button>
-        <Button size="sm" onClick={onAdd}>+ 追加</Button>
+        <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
+        <h2 className="text-sm font-semibold flex-1">{str.char_mgmt_title}</h2>
+        <Button variant="ghost" size="sm" onClick={() => setShowUrlImport(p => !p)}>{str.char_url_import}</Button>
+        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>{str.char_json_import}</Button>
+        <Button size="sm" onClick={onAdd}>{str.char_add}</Button>
         <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
       </header>
 
@@ -211,7 +209,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
             onKeyDown={e => { if (e.key === "Enter") handleUrlImport(); }}
           />
           <Button size="sm" onClick={handleUrlImport} disabled={urlImporting || !urlInput.trim()}>
-            {urlImporting ? "読込中..." : "読み込み"}
+            {urlImporting ? str.char_loading : str.char_load_btn}
           </Button>
         </div>
       )}
@@ -225,8 +223,8 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
       <div className="flex-1 overflow-y-auto">
         {characters.length === 0 ? (
           <div className="text-center text-sm text-gray-400 mt-12 px-4 space-y-2">
-            <p>キャラクターがまだいません。</p>
-            <p className="text-xs">テキストを取り込んで解析するか、手動で追加してください。</p>
+            <p>{str.char_empty}</p>
+            <p className="text-xs">{str.char_empty_desc}</p>
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">
@@ -239,18 +237,18 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
                   <p className="text-sm font-medium truncate">{c.canonical_name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     {c.first_appearance != null && (
-                      <span className="text-xs text-gray-400">第{c.first_appearance}章〜</span>
+                      <span className="text-xs text-gray-400">{str.char_first_appear(c.first_appearance)}</span>
                     )}
                     {!extIds.has(c.id) && (
                       <span className="text-xs text-amber-600 bg-amber-50 rounded px-1.5 py-0.5">
-                        ペルソナ未設定
+                        {str.char_no_persona}
                       </span>
                     )}
                     {authorProvidedIds.has(c.id) && (
-                      <span className="text-xs text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">公式</span>
+                      <span className="text-xs text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">{str.char_official}</span>
                     )}
                     {authorProvidedIds.has(c.id) && verifiedWorkIds.size > 0 && (
-                      <span className="text-xs text-green-600 bg-green-50 rounded px-1.5 py-0.5">認証済</span>
+                      <span className="text-xs text-green-600 bg-green-50 rounded px-1.5 py-0.5">{str.char_verified}</span>
                     )}
                   </div>
                   {c.description && (
@@ -258,8 +256,8 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
                   )}
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(c.id)}>編集</Button>
-                  <Button variant="danger" size="sm" onClick={() => handleDelete(c.id)}>削除</Button>
+                  <Button variant="ghost" size="sm" onClick={() => onEdit(c.id)}>{str.char_edit}</Button>
+                  <Button variant="danger" size="sm" onClick={() => handleDelete(c.id)}>{str.char_delete}</Button>
                 </div>
               </li>
             ))}

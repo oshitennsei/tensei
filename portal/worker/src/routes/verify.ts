@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
+import { nanoid } from "../lib/id";
 
 export const verifyRoutes = new Hono<{ Bindings: Env }>();
 
@@ -28,6 +29,9 @@ verifyRoutes.get("/", async (c) => {
 
   await c.env.MAGIC_LINK_KV.delete(`ml:${token}`);
 
-  // Redirect to dashboard
-  return c.redirect(`${c.env.FRONTEND_URL}/dashboard?author_id=${author_id}`);
+  // Generate session token (30 days)
+  const sessionToken = nanoid(40);
+  await c.env.MAGIC_LINK_KV.put(`sess:${sessionToken}`, author_id, { expirationTtl: 60 * 60 * 24 * 30 });
+
+  return c.redirect(`${c.env.FRONTEND_URL}/dashboard?token=${sessionToken}`);
 });

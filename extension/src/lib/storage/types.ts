@@ -4,11 +4,12 @@ export type SourceType = "authorized" | "pasted";
 export type Language = "ja" | "zh" | "zh-tw" | "zh-cn" | "en" | "ko" | "other";
 export type Platform = "syosetu" | "kakuyomu" | "other";
 export type SessionMode = "reader" | "author";
-export type LlmRole = "main" | "sub_agent" | "embedding" | "compression";
+export type LlmRole = "main" | "sub_agent" | "embedding" | "compression" | "plan" | "scene";
 export type AuthorizationStatus = "active" | "suspended" | "revoked";
 export type EntityType = "character" | "item" | "location" | "concept" | "organization";
 export type TimelineAxis = "chronological" | "narrative" | "character";
 export type Canonicity = "re_enactment" | "extension" | "speculation" | "alternate";
+export type SceneBasis = "chapter" | "post_story" | "spinoff" | "virtual";
 
 // ─── Core content stores ─────────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ export interface Work {
   language: Language;
   platform: Platform;
   source_type: SourceType;
+  platform_url?: string;              // canonical URL on the source platform
   authorization_record_url?: string;
   last_updated: number; // epoch ms
   background_image?: Blob;
@@ -29,6 +31,10 @@ export interface AppSettings {
   id: string; // always "global"
   background_image?: Blob;
   background_value?: string; // CSS background (color or gradient), used when no image set
+  plan_max_loops?: number;   // default 3; research rounds before forcing plan generation
+  plan_debug_mode?: boolean; // default false; store full research trace in ProductionPlan
+  ui_language?: Language;    // default "ja"; language for LLM prompts and UI
+  scene_quality_check?: boolean; // default true; evaluate & auto-correct beat output in chapter mode
 }
 
 export interface Chapter {
@@ -45,6 +51,7 @@ export interface Chapter {
   mentioned_items: string[];
   key_events: string[];             // event ids
   chunk_ids: string[];
+  event_ids?: string[];
   embedding_summary?: Float32Array;
 }
 
@@ -106,8 +113,16 @@ export interface EventParticipant {
   role: string;
 }
 
+export interface EventOccurrence {
+  chapter_id: string;
+  chapter_number: number;
+  chunk_id?: string;   // most relevant chunk in this chapter
+  note: string;        // what happened in this chapter (≤300 chars)
+}
+
 export interface Event {
   id: string;
+  work_id: string;
   chapter_id: string;
   scene_id?: string;
   who: EventParticipant[];
@@ -116,6 +131,9 @@ export interface Event {
   where?: string;
   why?: string;
   how?: string;
+  occurrences: EventOccurrence[];
+  first_chapter: number;
+  is_enriched?: boolean;
   witnesses: string[];           // entity ids
   unaware_characters: string[];  // entity ids
   consequences: string[];
@@ -179,12 +197,15 @@ export interface CharacterExtended {
   locked_fields?: LockedField[];    // fields author has marked non-overridable
   author_provided: boolean;
   author_authorization_id?: string;
+  pending_voice_samples?: VoiceSample[];  // liked responses awaiting user approval
 }
 
 export interface Turn {
   role: "user" | "character";
   content: string;
   timestamp: number;
+  debug_prompt?: string;  // system prompt snapshot; only stored when plan_debug_mode is on
+  liked?: boolean;        // user thumbs-up; promotes to pending_voice_samples
 }
 
 export interface Tier1Summary {
@@ -224,6 +245,7 @@ export interface Session {
   session_events: string[];  // event ids
   reader_profile_in_session: string;
   character_version_id?: string; // CharacterStateSnapshot.id or "base"
+  compression_in_progress?: boolean; // prevents duplicate background compression runs
 }
 
 export interface Persona {
@@ -370,6 +392,7 @@ export interface GeneratedSegment {
   contains_new_actions: boolean;
   user_directed: boolean;
   content: string;
+  debug_prompt?: string;  // system prompt snapshot per beat; only stored when plan_debug_mode is on
 }
 
 export interface PerformanceSession {
@@ -385,6 +408,11 @@ export interface PerformanceSession {
   generated_content: GeneratedSegment[];
   created_at: number;
   last_active: number;
+  production_plan_id?: string;
+  scene_directive?: string; // initial direction from beat 1, persisted for all subsequent beats
+  compressed_context?: string;        // LLM summary covering segments[0..compressed_through_index]
+  compressed_through_index?: number;  // index of last segment covered by compressed_context (-1 = none)
+  compression_in_progress?: boolean;  // prevents duplicate background compression runs
 }
 
 export interface SceneBlocking {
@@ -439,4 +467,50 @@ export interface CommunityThirdPartySource {
   loaded_at: number;
   last_used: number;
   user_acknowledged_warning: boolean;
+}
+
+export interface SceneBeat {
+  order: number;
+  description: string;
+}
+
+export interface ResearchTask {
+  type: "search_passages" | "get_character_profile" | "get_chapter_detail" | "get_chapter_full_text" | "find_co_appearances" | "search_events";
+  label: string;
+  result_count: number;
+  result_preview: string; // first 300 chars of combined results
+}
+
+export interface ResearchRound {
+  round: number;
+  llm_plan: string;       // main LLM's research plan reasoning
+  tasks: ResearchTask[];
+  llm_evaluation: string; // evaluation reasoning
+  sufficient: boolean;
+}
+
+export interface ProductionPlan {
+  id: string;
+  performance_session_id: string;
+  created_at: number;
+  // 5W1H
+  who: string[];           // character canonical names
+  where: string;
+  when: string;
+  what: string;
+  why: string;
+  how: string;
+  // Extended
+  props: string[];
+  tone_tags: string[];
+  beats: SceneBeat[];      // empty for chapter re-enactment (source text is ground truth)
+  scene_basis: SceneBasis;
+  reference_chapter?: number;
+  canonicity: Canonicity;
+  user_notes?: string;
+  supplementary_material?: string; // background context for performance LLM (not original text; not to be performed directly)
+  segmented_source_text?: string;  // chapter full text with <<<BEAT N: title>>> markers inserted by plan LLM
+  locked_plan_fields?: Array<"who" | "where" | "when" | "what" | "why" | "how" | "props" | "tone_tags" | "beats">;
+  debug_trace?: ResearchRound[]; // only present when plan_debug_mode is enabled
+  source_chunk_ids?: string[]; // ordered chunk IDs covering the source scene range, identified at plan generation time
 }

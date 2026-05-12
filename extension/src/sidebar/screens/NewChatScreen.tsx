@@ -4,6 +4,7 @@ import { createNewSession } from "@/lib/memory";
 import { listChapters } from "@/lib/ingestion";
 import { db } from "@/lib/storage";
 import type { Work, Entity, Session, CharacterExtended } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function NewChatScreen({ work, onBack, onStart }: Props) {
+  const str = useStrings();
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [selectedChar, setSelectedChar] = useState<string>("");
   const [selectedVersion, setSelectedVersion] = useState<string>("base");
@@ -71,17 +73,17 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
-        <Button variant="ghost" size="sm" onClick={onBack}>← 戻る</Button>
-        <h2 className="text-sm font-semibold">新しいチャット</h2>
+        <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
+        <h2 className="text-sm font-semibold">{str.new_chat_title}</h2>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        <p className="text-xs text-gray-400">「{work.title}」のキャラクターと話す設定をしてください。</p>
+        <p className="text-xs text-gray-400">{str.new_chat_desc(work.title)}</p>
 
         {/* Cutoff first — affects character list */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            既読章（ネタバレ制限）: 第 {cutoff} 章まで
+            {str.new_chat_cutoff(cutoff)}
           </label>
           <input
             type="range" min={1} max={maxChapter} value={cutoff}
@@ -89,20 +91,20 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
             onChange={e => setCutoff(Number(e.target.value))}
           />
           <p className="text-xs text-gray-400 mt-1">
-            選択した章より後の出来事はキャラクターが知りません。
+            {str.new_chat_cutoff_desc}
           </p>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">キャラクター</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{str.new_chat_char_label}</label>
           {noChars && (
             <p className="text-xs text-gray-400 bg-gray-50 rounded px-3 py-2">
-              キャラクターがまだ登録されていません。テキストを取り込んで解析してください。
+              {str.new_chat_no_chars}
             </p>
           )}
           {noneInRange && (
             <p className="text-xs text-amber-700 bg-amber-50 rounded px-3 py-2">
-              第 {cutoff} 章までに登場するキャラクターがいません。章数を増やしてください。
+              {str.new_chat_none_range(cutoff)}
             </p>
           )}
           {visibleChars.length > 0 && (
@@ -121,7 +123,7 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
                   {c.description && (
                     <p className="text-xs text-gray-500 mt-0.5 truncate">{c.description}</p>
                   )}
-                  <p className="text-xs text-gray-400 mt-0.5">初登場: 第{c.first_appearance ?? "?"}章</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{str.new_chat_first_appear(c.first_appearance ?? "?")}</p>
                 </button>
               ))}
             </div>
@@ -131,7 +133,7 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
         {/* Version picker — only shown when selectable snapshots exist */}
         {selectableSnapshots.length > 0 && (
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">人格バージョン</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{str.new_chat_version_label}</label>
             <div className="space-y-1.5">
               <button
                 onClick={() => setSelectedVersion("base")}
@@ -141,8 +143,8 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
                     : "border-gray-200 hover:border-gray-300"
                 }`}
               >
-                <p className="font-medium">現在（ベース）</p>
-                <p className="text-xs text-gray-400">デフォルトの人格設定</p>
+                <p className="font-medium">{str.new_chat_base_label}</p>
+                <p className="text-xs text-gray-400">{str.new_chat_base_desc}</p>
               </button>
               {selectableSnapshots.map(s => (
                 <button
@@ -154,10 +156,10 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
-                  <p className="font-medium">{s.label ?? `スナップショット`}</p>
+                  <p className="font-medium">{s.label ?? str.new_chat_snapshot}</p>
                   <div className="flex gap-2 text-xs text-gray-400 mt-0.5 flex-wrap">
                     {s.character_age && <span>{s.character_age}</span>}
-                    {s.from_chapter != null && <span>第{s.from_chapter}章頃</span>}
+                    {s.from_chapter != null && <span>{str.new_chat_chapter_around(s.from_chapter)}</span>}
                   </div>
                 </button>
               ))}
@@ -170,7 +172,7 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
           disabled={!selectedChar || starting}
           onClick={handleStart}
         >
-          {starting ? "準備中..." : "チャット開始"}
+          {starting ? str.new_chat_starting : str.new_chat_start}
         </Button>
       </div>
     </div>

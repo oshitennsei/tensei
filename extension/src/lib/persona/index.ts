@@ -23,12 +23,16 @@ export async function getPersonaForWork(work_id: string): Promise<Persona | null
 }
 
 export async function buildReaderPersonaText(work_id: string): Promise<string> {
-  const persona = await getPersonaForWork(work_id);
-  if (!persona) return "";
+  const [persona, appSettings] = await Promise.all([
+    getPersonaForWork(work_id),
+    db.app_settings.get("global"),
+  ]);
+
+  const uiLang = appSettings?.ui_language ?? "ja";
+  const langLabel = LANGUAGE_LABELS[uiLang];
 
   const parts: string[] = [];
 
-  const langLabel = LANGUAGE_LABELS[persona.language];
   if (langLabel) {
     parts.push(
       `読者の希望言語: ${langLabel}\n` +
@@ -37,7 +41,7 @@ export async function buildReaderPersonaText(work_id: string): Promise<string> {
     );
   }
 
-  if (persona.content_md.trim()) {
+  if (persona?.content_md.trim()) {
     parts.push(`## 読者について\n${persona.content_md}`);
   }
 

@@ -23,25 +23,33 @@ async function get<T>(path: string, token?: string): Promise<T> {
   return data as T;
 }
 
+export interface AuthorData {
+  author_id: string;
+  display_name: string;
+  status: string;
+  verify_code: string;
+  note_url: string | null;
+  works: Array<{ id: string; title: string; platform: string; platform_url: string; slug: string; status: string }>;
+}
+
 export const api = {
+  // Auth
+  me: (token: string) => get<AuthorData>("/auth/me", token),
+  login: (email: string) => post<{ ok: boolean }>("/auth/login", { email }),
+
+  // Registration
   register: (email: string, display_name: string) =>
     post<{ ok: boolean; author_id?: string }>("/register", { email, display_name }),
 
-  registerWork: (author_id: string, title: string, platform: string, platform_url: string, note_url: string, github_handle: string) =>
-    post<{ ok: boolean; work_id: string; slug: string }>("/register/work", { author_id, title, platform, platform_url, note_url, github_handle }),
+  requestCode: (token: string, platform_url: string, platform: string) =>
+    post<{ ok: boolean; code: string }>("/register/request-code", { platform_url, platform }, token),
 
-  status: (author_id: string) =>
-    get<{
-      author_id: string;
-      display_name: string;
-      status: string;
-      verify_code: string;
-      note_url: string | null;
-      works: Array<{ id: string; title: string; platform: string; slug: string; status: string }>;
-    }>(`/status/${author_id}`),
-
-  submitCharacter: (author_id: string, work_slug: string, character_slug: string, config: unknown) =>
-    post<{ ok: boolean; pr_url: string }>(`/status/${author_id}/character`, { work_slug, character_slug, config }),
+  registerWork: (token: string, title: string, platform: string, platform_url: string, github_handle?: string) =>
+    post<{ ok: boolean; work_id: string; slug: string }>(
+      "/register/work",
+      { title, platform, platform_url, github_handle },
+      token,
+    ),
 
   admin: {
     queue: (secret: string) => get<{ authors: unknown[] }>("/admin/queue", secret),
@@ -50,5 +58,17 @@ export const api = {
       post("/admin/approve/" + author_id, { github_handle, admin_note }, secret),
     reject: (secret: string, author_id: string, admin_note?: string) =>
       post("/admin/reject/" + author_id, { admin_note }, secret),
+    approveWork: (secret: string, platform_url: string) =>
+      post("/admin/approve-work", { platform_url }, secret),
+    pendingWorks: (secret: string) => get<{ works: unknown[] }>("/admin/pending-works", secret),
+    allWorks: (secret: string) => get<{ works: unknown[] }>("/admin/all-works", secret),
+    checkNote: (secret: string, author_id: string) =>
+      get<{ verified: boolean; reason: string }>(`/admin/check-note/${author_id}`, secret),
+    suspendWork: (secret: string, work_id: string) =>
+      post("/admin/suspend-work", { work_id }, secret),
+    restoreWork: (secret: string, work_id: string) =>
+      post("/admin/restore-work", { work_id }, secret),
+    deleteWork: (secret: string, work_id: string) =>
+      post("/admin/delete-work", { work_id }, secret),
   },
 };
