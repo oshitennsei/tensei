@@ -4,7 +4,7 @@ import { chat } from "@/lib/chat";
 import { createNewSession } from "@/lib/memory";
 import { LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
-import type { Session, Work } from "@/lib/storage";
+import type { Session, Work, VoiceSample } from "@/lib/storage";
 import { HARD_LIMITS } from "@/lib/content-safety";
 import { useStrings } from "@/lib/i18n";
 
@@ -17,13 +17,29 @@ interface Props {
 interface Message {
   role: "user" | "character" | "system";
   content: string;
+  turnIndex?: number; // index in tier_0_recent_turns (undefined = not yet persisted or system msg)
+  liked?: boolean;
+}
+
+function splitOOC(text: string): { main: string; oocParts: string[] } {
+  const oocParts: string[] = [];
+  const main = text.replace(/\(([^)]+)\)/g, (_, inner) => {
+    oocParts.push(inner.trim());
+    return "";
+  }).trim();
+  return { main, oocParts };
 }
 
 export function ChatScreen({ work, session: initialSession, onBack }: Props) {
   const str = useStrings();
   const [session, setSession] = useState<Session>(initialSession);
   const [messages, setMessages] = useState<Message[]>(() =>
-    initialSession.tier_0_recent_turns.map(t => ({ role: t.role, content: t.content }))
+    initialSession.tier_0_recent_turns.map((t, i) => ({
+      role: t.role,
+      content: t.content,
+      turnIndex: i,
+      liked: t.liked,
+    }))
   );
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -70,7 +86,16 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
         });
       }
       const updated = await db.sessions.get(session.id);
-      if (updated) setSession(updated);
+      if (updated) {
+        setSession(updated);
+        // Assign turnIndex to the newly completed character message
+        const newTurnIndex = updated.tier_0_recent_turns.length - 1;
+        setMessages(prev => {
+          const next = [...prev];
+          next[next.length - 1] = { ...next[next.length - 1], turnIndex: newTurnIndex };
+          return next;
+        });
+      }
     } catch (e: unknown) {
       if ((e as Error)?.name !== "AbortError") {
         const msg = e instanceof LlmError ? e.userMessage : str.chat_error;
@@ -89,6 +114,50 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
     setSession(s);
     setMessages([]);
     setInput("");
+  };
+
+  const handleLike = async (msgIndex: number) => {
+    const msg = messages[msgIndex];
+    if (msg.role !== "character" || msg.turnIndex === undefined) return;
+
+    const newLiked = !msg.liked;
+
+    // Update local message state
+    setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, liked: newLiked } : m));
+
+    // Update liked flag on the turn in DB
+    const updatedTurns = session.tier_0_recent_turns.map((t, i) =>
+      i === msg.turnIndex ? { ...t, liked: newLiked } : t
+    );
+    await db.sessions.update(session.id, { tier_0_recent_turns: updatedTurns });
+    setSession(prev => ({ ...prev, tier_0_recent_turns: updatedTurns }));
+
+    // Update pending_voice_samples on the character
+    const ext = await db.characters_extended.get(session.character_id);
+    if (!ext) return;
+
+    const lineKey = msg.content.slice(0, 300);
+
+    if (newLiked) {
+      // Find closest preceding user message for context
+      let context = "";
+      for (let j = msgIndex - 1; j >= 0; j--) {
+        if (messages[j].role === "user") {
+          const { main } = splitOOC(messages[j].content);
+          context = main.slice(0, 60);
+          break;
+        }
+      }
+      const newSample: VoiceSample = { context, line: lineKey };
+      await db.characters_extended.update(session.character_id, {
+        pending_voice_samples: [...(ext.pending_voice_samples ?? []), newSample],
+      });
+    } else {
+      // Remove from pending
+      await db.characters_extended.update(session.character_id, {
+        pending_voice_samples: (ext.pending_voice_samples ?? []).filter(s => s.line !== lineKey),
+      });
+    }
   };
 
   const remaining = HARD_LIMITS.max_input_chars - input.length;
@@ -111,7 +180,16 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
           <p className="text-center text-xs text-gray-400 mt-8">{str.chat_start_prompt(characterName)}</p>
         )}
         {messages.map((m, i) => (
-          <MessageBubble key={i} message={m} characterName={characterName} />
+          <MessageBubble
+            key={i}
+            message={m}
+            characterName={characterName}
+            onLike={m.role === "character" && m.turnIndex !== undefined && !streaming
+              ? () => handleLike(i)
+              : undefined
+            }
+            oocLabel={str.chat_ooc_label}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -142,7 +220,14 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
   );
 }
 
-function MessageBubble({ message, characterName }: { message: Message; characterName: string }) {
+interface BubbleProps {
+  message: Message;
+  characterName: string;
+  onLike?: () => void;
+  oocLabel: string;
+}
+
+function MessageBubble({ message, characterName, onLike, oocLabel }: BubbleProps) {
   if (message.role === "system") {
     return (
       <div className="text-center">
@@ -150,16 +235,49 @@ function MessageBubble({ message, characterName }: { message: Message; character
       </div>
     );
   }
+
   const isUser = message.role === "user";
+
+  if (isUser) {
+    const { main, oocParts } = splitOOC(message.content);
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%]">
+          <div className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words bg-indigo-600 text-white">
+            {main || message.content}
+          </div>
+          {oocParts.length > 0 && (
+            <p className="text-xs text-gray-400 italic mt-0.5 text-right">
+              {oocLabel} {oocParts.map(p => `(${p})`).join(" ")}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Character message
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[85%]`}>
-        {!isUser && <p className="text-xs text-gray-400 mb-0.5">{characterName}</p>}
-        <div className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${
-          isUser ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-900"
-        }`}>
+    <div className="flex justify-start">
+      <div className="max-w-[85%]">
+        <p className="text-xs text-gray-400 mb-0.5">{characterName}</p>
+        <div className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words bg-gray-100 text-gray-900">
           {message.content || <span className="animate-pulse">▋</span>}
         </div>
+        {onLike !== undefined && (
+          <button
+            className={`mt-0.5 text-xs px-1.5 py-0.5 rounded transition-colors ${
+              message.liked
+                ? "text-indigo-500 hover:text-indigo-400"
+                : "text-gray-300 hover:text-gray-500"
+            }`}
+            onClick={onLike}
+            title={message.liked ? "👍" : "👍"}
+            aria-pressed={message.liked ?? false}
+          >
+            👍
+          </button>
+        )}
       </div>
     </div>
   );

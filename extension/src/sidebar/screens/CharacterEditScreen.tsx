@@ -47,6 +47,7 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
   const [lockedFields, setLockedFields] = useState<LockedField[]>([]);
   const [authorProvided, setAuthorProvided] = useState(false);
   const [voiceSamples, setVoiceSamples] = useState<VoiceSample[]>([]);
+  const [pendingSamples, setPendingSamples] = useState<VoiceSample[]>([]);
   const [newSample, setNewSample] = useState<{ context: string; line: string }>({ context: "", line: "" });
   const [dialogueExamples, setDialogueExamples] = useState<NonNullable<CharacterExtended["dialogue_examples"]>>([]);
   const [showExForm, setShowExForm] = useState(false);
@@ -81,6 +82,7 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
         setLockedFields(ext.locked_fields ?? []);
         setAuthorProvided(ext.author_provided ?? false);
         setVoiceSamples(ext.voice_samples ?? []);
+        setPendingSamples(ext.pending_voice_samples ?? []);
         setDialogueExamples(ext.dialogue_examples ?? []);
         setSnapshots(ext.state_snapshots ?? []);
       }
@@ -267,6 +269,26 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
   const removeVoiceSample = (i: number) =>
     setVoiceSamples(prev => prev.filter((_, idx) => idx !== i));
 
+  const acceptPendingSample = async (i: number) => {
+    if (!character_id) return;
+    const sample = pendingSamples[i];
+    const newPending = pendingSamples.filter((_, idx) => idx !== i);
+    const newVoice = [...voiceSamples, sample];
+    setPendingSamples(newPending);
+    setVoiceSamples(newVoice);
+    await db.characters_extended.update(character_id, {
+      pending_voice_samples: newPending,
+      voice_samples: newVoice,
+    });
+  };
+
+  const rejectPendingSample = async (i: number) => {
+    if (!character_id) return;
+    const newPending = pendingSamples.filter((_, idx) => idx !== i);
+    setPendingSamples(newPending);
+    await db.characters_extended.update(character_id, { pending_voice_samples: newPending });
+  };
+
   const addDialogueExample = () => {
     if (!newEx.user_message_pattern.trim() || !newEx.ideal_response.trim()) return;
     setDialogueExamples(prev => [...prev, {
@@ -364,6 +386,35 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
                 disabled={isLocked("speech_style")}
               />
             </div>
+
+            {/* Pending voice sample suggestions */}
+            {pendingSamples.length > 0 && (
+              <div className="border border-indigo-100 rounded-lg p-3 bg-indigo-50/50">
+                <p className="text-xs font-semibold text-indigo-700 mb-2">{str.char_pending_header}</p>
+                <ul className="space-y-2">
+                  {pendingSamples.map((s, i) => (
+                    <li key={i} className="text-xs bg-white rounded px-2 py-1.5 border border-indigo-100">
+                      {s.context && <p className="text-gray-400 truncate mb-0.5">【{s.context}】</p>}
+                      <p className="text-gray-700 mb-1.5">「{s.line.slice(0, 120)}{s.line.length > 120 ? "…」" : "」"}</p>
+                      <div className="flex gap-1.5">
+                        <button
+                          className="px-2 py-0.5 rounded bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+                          onClick={() => acceptPendingSample(i)}
+                        >
+                          {str.char_pending_accept}
+                        </button>
+                        <button
+                          className="px-2 py-0.5 rounded border border-gray-300 text-gray-500 text-xs hover:bg-gray-100"
+                          onClick={() => rejectPendingSample(i)}
+                        >
+                          {str.char_pending_reject}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Voice samples */}
             <div>

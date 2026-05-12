@@ -172,10 +172,14 @@ export async function buildSessionContext(session: Session): Promise<string> {
   return parts.join("\n\n");
 }
 
+function stripOOC(text: string): string {
+  return text.replace(/\(([^)]+)\)/g, "").replace(/\s+/g, " ").trim();
+}
+
 export function sessionToMessages(session: Session): Array<{ role: "user" | "assistant"; content: string }> {
   return session.tier_0_recent_turns.map(t => ({
     role: t.role === "user" ? "user" : "assistant",
-    content: t.content,
+    content: t.role === "user" ? stripOOC(t.content) : t.content,
   }));
 }
 

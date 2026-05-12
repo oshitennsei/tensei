@@ -8,6 +8,15 @@ import { db } from "@/lib/storage";
 import type { Session, Turn, Language } from "@/lib/storage";
 import { getStrings, langFromStorage } from "@/lib/i18n";
 
+function parseOOC(message: string): { clean: string; direction: string | null } {
+  const directions: string[] = [];
+  const clean = message.replace(/\(([^)]+)\)/g, (_, inner) => {
+    directions.push(inner.trim());
+    return "";
+  }).replace(/\s+/g, " ").trim();
+  return { clean, direction: directions.length > 0 ? directions.join("\n") : null };
+}
+
 async function extractRetrievalQuery(
   user_message: string,
   character_name: string,
@@ -191,6 +200,10 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   if (sessionContext) systemParts.push(sessionContext);
   if (personaText) systemParts.push(personaText);
 
+  // Parse OOC direction from user message — inject into prompt, store clean version
+  const { clean: cleanMessage, direction: oocDirection } = parseOOC(user_message);
+  if (oocDirection) systemParts.push(`${s.chat_ooc_direction_header}\n${oocDirection}`);
+
   systemParts.push(
     s.chat_chapter_limit(session.cutoff_chapter),
     s.chat_instruction,
@@ -199,9 +212,10 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const messages: ChatMessage[] = [
     { role: "system", content: systemParts.join("\n\n") },
     ...sessionToMessages(session),
-    { role: "user", content: user_message },
+    { role: "user", content: cleanMessage || user_message },
   ];
 
+  // Store the raw message (with OOC) so the UI can display the annotation
   await addTurn(session.id, { role: "user", content: user_message, timestamp: Date.now() });
 
   let accumulated = "";
