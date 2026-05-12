@@ -250,6 +250,7 @@ const JA = {
   chat_chars_left: (n: number) => `残り ${n} 文字`,
   chat_default_char: "キャラクター",
   chat_error: "エラーが発生しました。",
+  chat_history_compressed: "以前のメッセージは要約されています",
 
   // NewChatScreen
   new_chat_title: "新しいチャット",
@@ -944,6 +945,7 @@ const ZH_TW: typeof JA = {
   chat_chars_left: (n: number) => `剩餘 ${n} 字`,
   chat_default_char: "角色",
   chat_error: "發生錯誤。",
+  chat_history_compressed: "較早的訊息已被摘要整理",
 
   new_chat_title: "新對話",
   new_chat_desc: (title: string) => `請設定與「${title}」角色對話的條件。`,
@@ -1627,6 +1629,7 @@ const ZH_CN: typeof JA = {
   chat_chars_left: (n: number) => `剩余 ${n} 字`,
   chat_default_char: "角色",
   chat_error: "发生错误。",
+  chat_history_compressed: "较早的消息已被摘要整理",
 
   new_chat_title: "新对话",
   new_chat_desc: (title: string) => `请设定与「${title}」角色对话的条件。`,
@@ -2310,6 +2313,7 @@ const EN: typeof JA = {
   chat_chars_left: (n: number) => `${n} chars left`,
   chat_default_char: "Character",
   chat_error: "An error occurred.",
+  chat_history_compressed: "Earlier messages have been summarized",
 
   new_chat_title: "New Chat",
   new_chat_desc: (title: string) => `Configure your chat with a character from "${title}".`,
