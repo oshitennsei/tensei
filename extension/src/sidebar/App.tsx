@@ -15,6 +15,7 @@ import { SceneBriefScreen } from "./screens/SceneBriefScreen";
 import { ProductionPlanScreen } from "./screens/ProductionPlanScreen";
 import { BtsScreen } from "./screens/BtsScreen";
 import { BtsBriefScreen } from "./screens/BtsBriefScreen";
+import { WorkRegisterScreen } from "./screens/WorkRegisterScreen";
 import { BackgroundProvider, useBackground } from "./context/BackgroundContext";
 import type { BtsSetup } from "@/lib/bts";
 import type { Work, Session, PerformanceSession, ProductionPlan, BtsSession, BtsLocation, BtsCrewMember } from "@/lib/storage";
@@ -35,7 +36,8 @@ type Screen =
   | { name: "production-plan"; work: Work; session: PerformanceSession; plan: ProductionPlan }
   | { name: "performance"; work: Work; session: PerformanceSession }
   | { name: "bts-brief"; work: Work; performanceSession: PerformanceSession }
-  | { name: "bts"; work: Work; performanceSession: PerformanceSession; initialSession?: BtsSession; initialLocation?: BtsLocation; initialCrew?: BtsCrewMember[] };
+  | { name: "bts"; work: Work; performanceSession: PerformanceSession; initialSession?: BtsSession; initialLocation?: BtsLocation; initialCrew?: BtsCrewMember[] }
+  | { name: "work-register" };
 
 function getWorkId(s: Screen): string | undefined {
   switch (s.name) {
@@ -239,11 +241,15 @@ function AppContent() {
     if (screen.name === "debug") {
       return <DebugScreen onBack={() => setScreen({ name: "settings" })} />;
     }
+    if (screen.name === "work-register") {
+      return <WorkRegisterScreen onBack={() => setScreen({ name: "home" })} />;
+    }
     return (
       <HomeScreen
         onSelectWork={work => setScreen({ name: "work", work })}
         onIngest={() => setScreen({ name: "ingest" })}
         onSettings={() => setScreen({ name: "settings" })}
+        onWorkRegister={() => setScreen({ name: "work-register" })}
       />
     );
   })();

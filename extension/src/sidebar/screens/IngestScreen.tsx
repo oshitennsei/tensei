@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "../components/Button";
-import { getOrCreateWork, ingestPastedText, listWorks, listChapters } from "@/lib/ingestion";
+import { getOrCreateWork, ingestPastedText, ingestKakuyomuWork, ingestSyosetsuWork, listWorks, listChapters } from "@/lib/ingestion";
 import type { AnalysisStatus } from "@/lib/ingestion";
 import type { Work } from "@/lib/storage";
 import { useStrings } from "@/lib/i18n";
+import { parseKakuyomuWorkUrl, checkKakuyomuAuthorization } from "@/lib/platform/kakuyomu";
+import type { KakuyomuPageInfo } from "@/lib/platform/kakuyomu";
+import { parseSyosetsuWorkUrl, checkSyosetsuAuthorization, isSyosetsuChapterPage } from "@/lib/platform/syosetu";
+import type { SyosetsuPageInfo } from "@/lib/platform/syosetu";
 
 const CHINESE_NUMS: Record<string, number> = {
   '〇':0,'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,
@@ -49,7 +53,23 @@ interface Props {
   onDone: (work: Work, chapter_number: number) => void;
 }
 
-type Step = "pick" | "new-work" | "mode" | "chapter" | "batch-select" | "batch-run";
+interface KkEpisodeItem {
+  episode_id: string;
+  title: string;
+  order: number;
+  checked: boolean;
+}
+
+interface SsChapterItem {
+  chapter_num: number;
+  title: string;
+  order: number;
+  checked: boolean;
+}
+
+type Step = "pick" | "new-work" | "mode" | "chapter" | "batch-select" | "batch-run"
+  | "kakuyomu-check" | "kakuyomu-unauthorized" | "kakuyomu-select" | "kakuyomu-run"
+  | "syosetu-check" | "syosetu-unauthorized" | "syosetu-select" | "syosetu-run";
 
 export function IngestScreen({ onBack, onDone }: Props) {
   const str = useStrings();
@@ -75,7 +95,167 @@ export function IngestScreen({ onBack, onDone }: Props) {
   const abortRef = useRef(false);
   const dragIndexRef = useRef<number | null>(null);
 
+  // Kakuyomu state
+  const [kkPageInfo, setKkPageInfo] = useState<KakuyomuPageInfo | null>(null);
+  const [kkEpisodes, setKkEpisodes] = useState<KkEpisodeItem[]>([]);
+  const [kkWorkUrl, setKkWorkUrl] = useState("");
+  const [kkAuthError, setKkAuthError] = useState<"not_registered" | "pending" | "network_error" | null>(null);
+  const [kkIsEpisodePage, setKkIsEpisodePage] = useState(false);
+  const [kkDone, setKkDone] = useState(0);
+  const [kkErrors, setKkErrors] = useState<string[]>([]);
+  const [kkCurrent, setKkCurrent] = useState("");
+  const kkAbortRef = useRef(false);
+  const kkTabIdRef = useRef<number | null>(null);
+
+  // Syosetu state
+  const [ssPageInfo, setSsPageInfo] = useState<SyosetsuPageInfo | null>(null);
+  const [ssChapters, setSsChapters] = useState<SsChapterItem[]>([]);
+  const [ssWorkUrl, setSsWorkUrl] = useState("");
+  const [ssIsChapterPage, setSsIsChapterPage] = useState(false);
+  const [ssDone, setSsDone] = useState(0);
+  const [ssErrors, setSsErrors] = useState<string[]>([]);
+  const [ssCurrent, setSsCurrent] = useState("");
+  const ssAbortRef = useRef(false);
+  const ssTabIdRef = useRef<number | null>(null);
+
   useEffect(() => { listWorks().then(setWorks); }, []);
+
+  // Detect platform — extracted so it can be called on mount AND on tab navigation
+  const detectPlatformRef = useRef<((url: string, tabId: number) => Promise<void>) | null>(null);
+  detectPlatformRef.current = async (url: string, tabId: number) => {
+    try {
+    // ── Kakuyomu ────────────────────────────────────────────────
+    const kkParsed = parseKakuyomuWorkUrl(url);
+    if (kkParsed) {
+      if (url.includes("/episodes/")) {
+        setKkWorkUrl(kkParsed.canonical);
+        setKkIsEpisodePage(true);
+        setKkAuthError("not_registered");
+        setStep("kakuyomu-unauthorized");
+        return;
+      }
+
+      kkTabIdRef.current = tabId;
+      setKkWorkUrl(kkParsed.canonical);
+      setStep("kakuyomu-check");
+
+      const authResult = await checkKakuyomuAuthorization(kkParsed.canonical);
+      if (!authResult.authorized) {
+        setKkAuthError(authResult.reason);
+        setStep("kakuyomu-unauthorized");
+        return;
+      }
+
+      let pageInfo: KakuyomuPageInfo | null = null;
+      try {
+        pageInfo = await chrome.tabs.sendMessage(tabId, { type: "KK_GET_PAGE_INFO" }) as KakuyomuPageInfo | null;
+      } catch {
+        try {
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/index.js"] });
+          await new Promise(r => setTimeout(r, 200));
+          pageInfo = await chrome.tabs.sendMessage(tabId, { type: "KK_GET_PAGE_INFO" }) as KakuyomuPageInfo | null;
+        } catch { pageInfo = null; }
+      }
+
+      if (!pageInfo || pageInfo.episodes.length === 0) { setStep("pick"); return; }
+
+      const existingWorks = await listWorks();
+      const matchedWork = existingWorks.find(w => w.platform_url === kkParsed.canonical);
+      const readTitles = new Set<string>();
+      if (matchedWork) {
+        const chapters = await listChapters(matchedWork.id);
+        for (const ch of chapters) readTitles.add(ch.title);
+      }
+
+      setKkPageInfo(pageInfo);
+      setKkEpisodes(pageInfo.episodes.map(ep => ({
+        ...ep,
+        checked: readTitles.size === 0 || !readTitles.has(ep.title),
+      })));
+      setStep("kakuyomu-select");
+      return;
+    }
+
+    // ── Syosetu ─────────────────────────────────────────────────
+    const ssParsed = parseSyosetsuWorkUrl(url);
+    if (ssParsed) {
+      if (isSyosetsuChapterPage(url)) {
+        setSsWorkUrl(ssParsed.canonical);
+        setSsIsChapterPage(true);
+        setStep("syosetu-unauthorized");
+        return;
+      }
+
+      ssTabIdRef.current = tabId;
+      setSsWorkUrl(ssParsed.canonical);
+      setStep("syosetu-check");
+
+      const authResult = await checkSyosetsuAuthorization(ssParsed.canonical);
+      if (!authResult.authorized) {
+        setStep("syosetu-unauthorized");
+        return;
+      }
+
+      let pageInfo: SyosetsuPageInfo | null = null;
+      try {
+        pageInfo = await chrome.tabs.sendMessage(tabId, { type: "SS_GET_PAGE_INFO" }) as SyosetsuPageInfo | null;
+      } catch {
+        // Content script not running — inject it then retry
+        try {
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/index.js"] });
+          await new Promise(r => setTimeout(r, 200));
+          pageInfo = await chrome.tabs.sendMessage(tabId, { type: "SS_GET_PAGE_INFO" }) as SyosetsuPageInfo | null;
+        } catch { pageInfo = null; }
+      }
+
+      if (!pageInfo || pageInfo.chapters.length === 0) { setStep("pick"); return; }
+
+      const existingWorks = await listWorks();
+      const matchedWork = existingWorks.find(w => w.platform_url === ssParsed.canonical);
+      const readTitles = new Set<string>();
+      if (matchedWork) {
+        const chapters = await listChapters(matchedWork.id);
+        for (const ch of chapters) readTitles.add(ch.title);
+      }
+
+      setSsPageInfo(pageInfo);
+      setSsChapters(pageInfo.chapters.map(ch => ({
+        ...ch,
+        checked: readTitles.size === 0 || !readTitles.has(ch.title),
+      })));
+      setStep("syosetu-select");
+    }
+    } catch { setStep("pick"); }
+  };
+
+  useEffect(() => {
+    const activeSteps: Step[] = [
+      "kakuyomu-check", "kakuyomu-select", "kakuyomu-run",
+      "syosetu-check", "syosetu-select", "syosetu-run",
+    ];
+
+    const runDetection = (url: string, tabId: number) => {
+      detectPlatformRef.current?.(url, tabId)?.catch(() => {});
+    };
+
+    // Run on mount
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      if (tab?.url && tab.id != null) runDetection(tab.url, tab.id);
+    });
+
+    // Re-run when the active tab navigates (e.g. user was on pick screen, then navigated)
+    const onUpdated = (tabId: number, info: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+      if (info.status !== "complete" || !tab.url || !tab.active) return;
+      // Don't interrupt an in-progress import
+      setStep(current => {
+        if (!activeSteps.includes(current)) runDetection(tab.url!, tabId);
+        return current;
+      });
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    return () => chrome.tabs.onUpdated.removeListener(onUpdated);
+  }, []);
 
   const statusLabel = (s: AnalysisStatus): string => {
     if (s === "chunking")  return str.status_chunking;
@@ -186,8 +366,73 @@ export function IngestScreen({ onBack, onDone }: Props) {
     setBatchCurrent("");
   };
 
+  const handleKkStart = async () => {
+    const selected = kkEpisodes.filter(ep => ep.checked);
+    if (selected.length === 0 || !kkPageInfo || kkTabIdRef.current === null) return;
+
+    kkAbortRef.current = false;
+    setKkDone(0);
+    setKkErrors([]);
+    setKkCurrent("");
+    setStep("kakuyomu-run");
+
+    const resultWork = await ingestKakuyomuWork({
+      work_title: kkPageInfo.title,
+      work_author: kkPageInfo.author,
+      work_url: kkPageInfo.work_url,
+      tab_id: kkTabIdRef.current,
+      episodes: selected,
+      language: "ja",
+      onStatus: (msg) => setKkCurrent(msg),
+      onProgress: (done) => setKkDone(done),
+      onError: (msg) => setKkErrors(prev => [...prev, msg]),
+      signal: { get aborted() { return kkAbortRef.current; } } as AbortSignal,
+    });
+
+    setKkCurrent("");
+    if (resultWork) {
+      setWork(resultWork);
+    }
+  };
+
+  const handleSsStart = async () => {
+    const selected = ssChapters.filter(ch => ch.checked);
+    if (selected.length === 0 || !ssPageInfo || ssTabIdRef.current === null) return;
+
+    ssAbortRef.current = false;
+    setSsDone(0);
+    setSsErrors([]);
+    setSsCurrent("");
+    setStep("syosetu-run");
+
+    const resultWork = await ingestSyosetsuWork({
+      work_title: ssPageInfo.title,
+      work_author: ssPageInfo.author,
+      work_url: ssPageInfo.work_url,
+      ncode: ssPageInfo.ncode,
+      tab_id: ssTabIdRef.current,
+      chapters: selected,
+      language: "ja",
+      onStatus: (msg) => setSsCurrent(msg),
+      onProgress: (done) => setSsDone(done),
+      onError: (msg) => setSsErrors(prev => [...prev, msg]),
+      signal: { get aborted() { return ssAbortRef.current; } } as AbortSignal,
+    });
+
+    setSsCurrent("");
+    if (resultWork) setWork(resultWork);
+  };
+
   const goBack = () => {
-    if (step === "chapter" || step === "mode" || step === "batch-select") {
+    if (step === "kakuyomu-check" || step === "kakuyomu-unauthorized" || step === "kakuyomu-select") {
+      setStep("pick");
+    } else if (step === "kakuyomu-run") {
+      kkAbortRef.current = true; setStep("kakuyomu-select");
+    } else if (step === "syosetu-check" || step === "syosetu-unauthorized" || step === "syosetu-select") {
+      setStep("pick");
+    } else if (step === "syosetu-run") {
+      ssAbortRef.current = true; setStep("syosetu-select");
+    } else if (step === "chapter" || step === "mode" || step === "batch-select") {
       setStep("pick"); setWork(null); setError("");
     } else if (step === "new-work") {
       setStep("pick"); setError("");
@@ -199,6 +444,10 @@ export function IngestScreen({ onBack, onDone }: Props) {
   };
 
   const batchFinished = step === "batch-run" && !batchCurrent && batchDone === batchFiles.length && batchDone > 0;
+  const kkSelected = kkEpisodes.filter(ep => ep.checked).length;
+  const kkFinished = step === "kakuyomu-run" && !kkCurrent && kkDone === kkEpisodes.filter(ep => ep.checked).length && kkDone > 0;
+  const ssSelected = ssChapters.filter(ch => ch.checked).length;
+  const ssFinished = step === "syosetu-run" && !ssCurrent && ssDone === ssChapters.filter(ch => ch.checked).length && ssDone > 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -208,6 +457,284 @@ export function IngestScreen({ onBack, onDone }: Props) {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+        {/* ── Step: kakuyomu-check ─────────────────────────────── */}
+        {step === "kakuyomu-check" && (
+          <p className="text-sm text-gray-500 text-center mt-8">{str.kk_checking_auth}</p>
+        )}
+
+        {/* ── Step: kakuyomu-unauthorized ──────────────────────── */}
+        {step === "kakuyomu-unauthorized" && (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500 break-all">{kkWorkUrl}</p>
+
+            {kkIsEpisodePage ? (
+              <p className="text-sm text-amber-700 bg-amber-50 rounded px-3 py-2">{str.kk_work_page_required}</p>
+            ) : (
+              <p className="text-sm text-amber-700 bg-amber-50 rounded px-3 py-2">{str.kk_unauthorized}</p>
+            )}
+
+            <p className="text-xs text-gray-400">{str.kk_unauthorized_reason}</p>
+
+            {/* Fallback options for readers */}
+            {!kkIsEpisodePage && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase">{str.kk_fallback_header}</p>
+                <button
+                  className="w-full text-left px-3 py-2.5 rounded border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                  onClick={() => setStep("pick")}
+                >
+                  <p className="text-sm font-medium">{str.kk_fallback_manual}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{str.kk_fallback_manual_desc}</p>
+                </button>
+              </div>
+            )}
+
+            {/* Author registration link */}
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-xs text-gray-400 mb-1.5">{str.kk_if_author}</p>
+              <a
+                href="https://tensei-portal.pages.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-center text-sm text-indigo-600 underline"
+              >
+                {str.kk_portal_link}
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step: kakuyomu-select ─────────────────────────────── */}
+        {step === "kakuyomu-select" && kkPageInfo && (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold">{str.kk_mode_header}</p>
+            <p className="text-xs text-gray-600 font-medium">{kkPageInfo.title}</p>
+            <p className="text-xs text-gray-400">{kkPageInfo.author}</p>
+
+            <div className="flex gap-2">
+              <button
+                className="text-xs text-indigo-600 underline"
+                onClick={() => setKkEpisodes(eps => eps.map(ep => ({ ...ep, checked: true })))}
+              >{str.kk_select_all}</button>
+              <button
+                className="text-xs text-gray-400 underline"
+                onClick={() => setKkEpisodes(eps => eps.map(ep => ({ ...ep, checked: false })))}
+              >{str.kk_deselect_all}</button>
+              <span className="ml-auto text-xs text-gray-500">{str.kk_episodes_selected(kkSelected)}</span>
+            </div>
+
+            <ul className="space-y-0.5 max-h-72 overflow-y-auto border border-gray-100 rounded p-2">
+              {kkEpisodes.map((ep, idx) => (
+                <li key={ep.episode_id} className="flex items-center gap-2 py-0.5">
+                  <input
+                    type="checkbox"
+                    checked={ep.checked}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setKkEpisodes(prev => prev.map((item, i) => i === idx ? { ...item, checked } : item));
+                    }}
+                    className="rounded"
+                  />
+                  <span className="text-xs text-gray-600 truncate">{ep.title}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Button
+              className="w-full"
+              disabled={kkSelected === 0}
+              onClick={handleKkStart}
+            >
+              {str.kk_start_import} ({kkSelected})
+            </Button>
+          </div>
+        )}
+
+        {/* ── Step: kakuyomu-run ───────────────────────────────── */}
+        {step === "kakuyomu-run" && (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-gray-700">{str.kk_mode_header}</p>
+
+            <div>
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>{kkDone} / {kkEpisodes.filter(ep => ep.checked).length}</span>
+                <span>{Math.round((kkDone / Math.max(kkEpisodes.filter(ep => ep.checked).length, 1)) * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(kkDone / Math.max(kkEpisodes.filter(ep => ep.checked).length, 1)) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {kkCurrent && (
+              <p className="text-xs text-indigo-600 truncate">{kkCurrent}</p>
+            )}
+
+            {kkErrors.length > 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 rounded p-2 space-y-0.5 max-h-32 overflow-y-auto">
+                {kkErrors.map((e, i) => <p key={i}>{e}</p>)}
+              </div>
+            )}
+
+            {kkFinished && work && (
+              <div className="space-y-2">
+                <p className="text-xs text-green-700 bg-green-50 rounded px-3 py-2">
+                  {str.ingest_done_msg(kkDone, kkErrors.length)}
+                </p>
+                <Button className="w-full" onClick={() => onDone(work, kkDone)}>
+                  {str.ingest_done_btn}
+                </Button>
+              </div>
+            )}
+
+            {!kkFinished && (
+              <Button variant="ghost" className="w-full" onClick={() => { kkAbortRef.current = true; }}>
+                {str.ingest_abort}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* ── Step: syosetu-check ──────────────────────────────── */}
+        {step === "syosetu-check" && (
+          <p className="text-sm text-gray-500 text-center mt-8">{str.kk_checking_auth}</p>
+        )}
+
+        {/* ── Step: syosetu-unauthorized ───────────────────────── */}
+        {step === "syosetu-unauthorized" && (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500 break-all">{ssWorkUrl}</p>
+
+            {ssIsChapterPage ? (
+              <p className="text-sm text-amber-700 bg-amber-50 rounded px-3 py-2">{str.ss_work_page_required}</p>
+            ) : (
+              <p className="text-sm text-amber-700 bg-amber-50 rounded px-3 py-2">{str.kk_unauthorized}</p>
+            )}
+
+            <p className="text-xs text-gray-400">{str.ss_unauthorized_reason}</p>
+
+            {!ssIsChapterPage && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase">{str.kk_fallback_header}</p>
+                <button
+                  className="w-full text-left px-3 py-2.5 rounded border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                  onClick={() => setStep("pick")}
+                >
+                  <p className="text-sm font-medium">{str.kk_fallback_manual}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{str.kk_fallback_manual_desc}</p>
+                </button>
+              </div>
+            )}
+
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-xs text-gray-400 mb-1.5">{str.kk_if_author}</p>
+              <a
+                href="https://tensei-portal.pages.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-center text-sm text-indigo-600 underline"
+              >
+                {str.kk_portal_link}
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step: syosetu-select ─────────────────────────────── */}
+        {step === "syosetu-select" && ssPageInfo && (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold">{str.ss_mode_header}</p>
+            <p className="text-xs text-gray-600 font-medium">{ssPageInfo.title}</p>
+            <p className="text-xs text-gray-400">{ssPageInfo.author}</p>
+
+            <div className="flex gap-2">
+              <button
+                className="text-xs text-indigo-600 underline"
+                onClick={() => setSsChapters(chs => chs.map(ch => ({ ...ch, checked: true })))}
+              >{str.kk_select_all}</button>
+              <button
+                className="text-xs text-gray-400 underline"
+                onClick={() => setSsChapters(chs => chs.map(ch => ({ ...ch, checked: false })))}
+              >{str.kk_deselect_all}</button>
+              <span className="ml-auto text-xs text-gray-500">{str.kk_episodes_selected(ssSelected)}</span>
+            </div>
+
+            <ul className="space-y-0.5 max-h-72 overflow-y-auto border border-gray-100 rounded p-2">
+              {ssChapters.map((ch, idx) => (
+                <li key={ch.chapter_num} className="flex items-center gap-2 py-0.5">
+                  <input
+                    type="checkbox"
+                    checked={ch.checked}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setSsChapters(prev => prev.map((item, i) => i === idx ? { ...item, checked } : item));
+                    }}
+                    className="rounded"
+                  />
+                  <span className="text-xs text-gray-600 truncate">{ch.title}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Button
+              className="w-full"
+              disabled={ssSelected === 0}
+              onClick={handleSsStart}
+            >
+              {str.kk_start_import} ({ssSelected})
+            </Button>
+          </div>
+        )}
+
+        {/* ── Step: syosetu-run ────────────────────────────────── */}
+        {step === "syosetu-run" && (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-gray-700">{str.ss_mode_header}</p>
+
+            <div>
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>{ssDone} / {ssChapters.filter(ch => ch.checked).length}</span>
+                <span>{Math.round((ssDone / Math.max(ssChapters.filter(ch => ch.checked).length, 1)) * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(ssDone / Math.max(ssChapters.filter(ch => ch.checked).length, 1)) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {ssCurrent && (
+              <p className="text-xs text-indigo-600 truncate">{ssCurrent}</p>
+            )}
+
+            {ssErrors.length > 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 rounded p-2 space-y-0.5 max-h-32 overflow-y-auto">
+                {ssErrors.map((e, i) => <p key={i}>{e}</p>)}
+              </div>
+            )}
+
+            {ssFinished && work && (
+              <div className="space-y-2">
+                <p className="text-xs text-green-700 bg-green-50 rounded px-3 py-2">
+                  {str.ingest_done_msg(ssDone, ssErrors.length)}
+                </p>
+                <Button className="w-full" onClick={() => onDone(work, ssDone)}>
+                  {str.ingest_done_btn}
+                </Button>
+              </div>
+            )}
+
+            {!ssFinished && (
+              <Button variant="ghost" className="w-full" onClick={() => { ssAbortRef.current = true; }}>
+                {str.ingest_abort}
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* ── Step: pick ─────────────────────────────────────── */}
         {step === "pick" && (

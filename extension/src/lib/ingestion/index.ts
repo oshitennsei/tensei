@@ -658,14 +658,27 @@ export interface IngestWorkInput {
   language: Work["language"];
   platform: Work["platform"];
   source_type: Work["source_type"];
+  platform_url?: string;
 }
 
 export async function getOrCreateWork(input: IngestWorkInput): Promise<Work> {
+  // If a platform_url is given, prefer matching by it (for authorized imports)
+  if (input.platform_url) {
+    const byUrl = await db.works.filter(w => w.platform_url === input.platform_url).first();
+    if (byUrl) return byUrl;
+  }
   const existing = await db.works
     .where("title").equals(input.title)
     .filter(w => w.author === input.author)
     .first();
-  if (existing) return existing;
+  if (existing) {
+    // Back-fill platform_url if missing
+    if (input.platform_url && !existing.platform_url) {
+      await db.works.update(existing.id, { platform_url: input.platform_url });
+      existing.platform_url = input.platform_url;
+    }
+    return existing;
+  }
   const work: Work = { id: crypto.randomUUID(), last_updated: Date.now(), ...input };
   await db.works.add(work);
   return work;
@@ -1733,6 +1746,127 @@ export async function reembedWork(
     await embedChapter(chapters[i].id).catch(e => onError?.(String(e)));
   }
   onProgress?.(chapters.length, chapters.length, "");
+}
+
+export interface KakuyomuIngestOptions {
+  work_title: string;
+  work_author: string;
+  work_url: string;
+  tab_id: number;
+  episodes: Array<{ episode_id: string; title: string; order: number }>;
+  language: Language;
+  onStatus?: (msg: string) => void;
+  onProgress?: (done: number, total: number) => void;
+  onError?: (msg: string) => void;
+  signal?: AbortSignal;
+}
+
+export async function ingestKakuyomuWork(opts: KakuyomuIngestOptions): Promise<Work | null> {
+  const work = await getOrCreateWork({
+    title: opts.work_title,
+    author: opts.work_author,
+    language: opts.language,
+    source_type: "authorized",
+    platform: "kakuyomu",
+    platform_url: opts.work_url,
+  });
+
+  const existingChapters = await listChapters(work.id);
+  const nextChapterNum = existingChapters.length > 0
+    ? Math.max(...existingChapters.map(c => c.chapter_number)) + 1
+    : 1;
+
+  const workId = new URL(opts.work_url).pathname.split("/")[2];
+
+  for (let i = 0; i < opts.episodes.length; i++) {
+    if (opts.signal?.aborted) break;
+    const ep = opts.episodes[i];
+    opts.onStatus?.(`「${ep.title}」を読み込み中...`);
+
+    let text: string | null = null;
+    try {
+      text = await chrome.tabs.sendMessage(opts.tab_id, {
+        type: "KK_FETCH_EPISODE",
+        episode_id: ep.episode_id,
+        work_id: workId,
+      }) as string | null;
+    } catch {
+      opts.onError?.(`「${ep.title}」の取得に失敗しました`);
+      opts.onProgress?.(i + 1, opts.episodes.length);
+      continue;
+    }
+
+    if (!text) {
+      opts.onError?.(`「${ep.title}」のコンテンツが取得できませんでした`);
+      opts.onProgress?.(i + 1, opts.episodes.length);
+      continue;
+    }
+
+    await ingestPastedText(work.id, nextChapterNum + i, ep.title, text, opts.onStatus, opts.onError);
+    opts.onProgress?.(i + 1, opts.episodes.length);
+  }
+
+  return work;
+}
+
+export interface SyosetsuIngestOptions {
+  work_title: string;
+  work_author: string;
+  work_url: string;
+  ncode: string;
+  tab_id: number;
+  chapters: Array<{ chapter_num: number; title: string; order: number }>;
+  language: Language;
+  onStatus?: (msg: string) => void;
+  onProgress?: (done: number, total: number) => void;
+  onError?: (msg: string) => void;
+  signal?: AbortSignal;
+}
+
+export async function ingestSyosetsuWork(opts: SyosetsuIngestOptions): Promise<Work | null> {
+  const work = await getOrCreateWork({
+    title: opts.work_title,
+    author: opts.work_author,
+    language: opts.language,
+    source_type: "authorized",
+    platform: "syosetu",
+    platform_url: opts.work_url,
+  });
+
+  const existingChapters = await listChapters(work.id);
+  const nextChapterNum = existingChapters.length > 0
+    ? Math.max(...existingChapters.map(c => c.chapter_number)) + 1
+    : 1;
+
+  for (let i = 0; i < opts.chapters.length; i++) {
+    if (opts.signal?.aborted) break;
+    const ch = opts.chapters[i];
+    opts.onStatus?.(`「${ch.title}」を読み込み中...`);
+
+    let text: string | null = null;
+    try {
+      text = await chrome.tabs.sendMessage(opts.tab_id, {
+        type: "SS_FETCH_CHAPTER",
+        ncode: opts.ncode,
+        chapter_num: ch.chapter_num,
+      }) as string | null;
+    } catch {
+      opts.onError?.(`「${ch.title}」の取得に失敗しました`);
+      opts.onProgress?.(i + 1, opts.chapters.length);
+      continue;
+    }
+
+    if (!text) {
+      opts.onError?.(`「${ch.title}」のコンテンツが取得できませんでした`);
+      opts.onProgress?.(i + 1, opts.chapters.length);
+      continue;
+    }
+
+    await ingestPastedText(work.id, nextChapterNum + i, ch.title, text, opts.onStatus, opts.onError);
+    opts.onProgress?.(i + 1, opts.chapters.length);
+  }
+
+  return work;
 }
 
 export async function listWorks(): Promise<Work[]> {

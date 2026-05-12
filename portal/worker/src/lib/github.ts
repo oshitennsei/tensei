@@ -1,9 +1,3 @@
-interface GithubFile {
-  path: string;
-  content: string; // base64
-  sha?: string;
-}
-
 async function githubApi(
   token: string,
   method: string,

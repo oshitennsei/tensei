@@ -20,6 +20,7 @@ export interface Work {
   language: Language;
   platform: Platform;
   source_type: SourceType;
+  platform_url?: string;              // canonical URL on the source platform
   authorization_record_url?: string;
   last_updated: number; // epoch ms
   background_image?: Blob;
@@ -196,6 +197,7 @@ export interface CharacterExtended {
   locked_fields?: LockedField[];    // fields author has marked non-overridable
   author_provided: boolean;
   author_authorization_id?: string;
+  pending_voice_samples?: VoiceSample[];  // liked responses awaiting user approval
 }
 
 export interface Turn {
@@ -203,6 +205,7 @@ export interface Turn {
   content: string;
   timestamp: number;
   debug_prompt?: string;  // system prompt snapshot; only stored when plan_debug_mode is on
+  liked?: boolean;        // user thumbs-up; promotes to pending_voice_samples
 }
 
 export interface Tier1Summary {

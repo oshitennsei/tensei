@@ -8,9 +8,10 @@ interface Props {
   onSelectWork: (work: Work) => void;
   onIngest: () => void;
   onSettings: () => void;
+  onWorkRegister: () => void;
 }
 
-export function HomeScreen({ onSelectWork, onIngest, onSettings }: Props) {
+export function HomeScreen({ onSelectWork, onIngest, onSettings, onWorkRegister }: Props) {
   const str = useStrings();
   const [works, setWorks] = useState<Work[]>([]);
 
@@ -22,6 +23,7 @@ export function HomeScreen({ onSelectWork, onIngest, onSettings }: Props) {
         <h1 className="text-sm font-semibold">{str.home_title}</h1>
         <div className="flex gap-1">
           <Button variant="ghost" size="sm" onClick={onIngest}>{str.home_ingest_btn}</Button>
+          <Button variant="ghost" size="sm" onClick={onWorkRegister}>{str.author_verify_btn}</Button>
           <Button variant="ghost" size="sm" onClick={onSettings}>{str.home_settings_btn}</Button>
         </div>
       </header>
