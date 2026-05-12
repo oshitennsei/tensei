@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { api } from "../api";
+import { api, type PortalCharacter, type PortalChapterSummary, type LockedField } from "../api";
 
 type AuthorStatus = "pending_email" | "email_verified" | "pending_manual_review" | "approved" | "rejected";
 
@@ -23,6 +23,152 @@ export function DashboardPage() {
   const [verifyCode, setVerifyCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState("");
+
+  // Phase 6: character + summary management
+  const [activeWorkId, setActiveWorkId] = useState<string | null>(null);
+  const [workCharacters, setWorkCharacters] = useState<PortalCharacter[]>([]);
+  const [workSummaries, setWorkSummaries] = useState<PortalChapterSummary[]>([]);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentMsg, setContentMsg] = useState("");
+  const [charFormOpen, setCharFormOpen] = useState(false);
+  const [editingSlug, setEditingSlug] = useState<string | null>(null);
+  const [charForm, setCharForm] = useState({
+    name: "", slug: "", persona: "", speech_style: "",
+    will_not_do: "", forbidden_topics: "",
+    locked_fields: [] as LockedField[],
+  });
+  const [summaryRows, setSummaryRows] = useState<Array<{ chapter_number: number; summary: string; locked: boolean; saving: boolean }>>([]);
+  const [newSummaryRow, setNewSummaryRow] = useState({ chapter_number: "", summary: "", locked: false });
+
+  const loadWorkContent = useCallback(async (workId: string) => {
+    if (!token) return;
+    setContentLoading(true); setContentMsg("");
+    try {
+      const [charRes, sumRes] = await Promise.all([
+        api.getCharacters(workId),
+        api.getSummaries(workId),
+      ]);
+      setWorkCharacters(charRes.characters);
+      setWorkSummaries(sumRes.summaries);
+      setSummaryRows(sumRes.summaries.map(s => ({ ...s, saving: false })));
+    } catch (e) {
+      setContentMsg(String(e instanceof Error ? e.message : e));
+    } finally {
+      setContentLoading(false);
+    }
+  }, [token]);
+
+  const toggleWorkManage = async (workId: string) => {
+    if (activeWorkId === workId) {
+      setActiveWorkId(null); setCharFormOpen(false); return;
+    }
+    setActiveWorkId(workId);
+    setCharFormOpen(false);
+    setEditingSlug(null);
+    await loadWorkContent(workId);
+  };
+
+  const slugify = (s: string) =>
+    s.toLowerCase().replace(/[^\w\s-]/g, "").replace(/[\s_]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
+  const openCharForm = (char?: PortalCharacter) => {
+    if (char) {
+      setEditingSlug(char.slug);
+      setCharForm({
+        name: char.name, slug: char.slug,
+        persona: char.data.persona ?? "",
+        speech_style: char.data.speech_style ?? "",
+        will_not_do: (char.data.will_not_do ?? []).join("\n"),
+        forbidden_topics: (char.data.forbidden_topics ?? []).join("\n"),
+        locked_fields: char.locked_fields,
+      });
+    } else {
+      setEditingSlug(null);
+      setCharForm({ name: "", slug: "", persona: "", speech_style: "", will_not_do: "", forbidden_topics: "", locked_fields: [] });
+    }
+    setCharFormOpen(true);
+  };
+
+  const toggleLockedField = (field: LockedField) => {
+    setCharForm(f => ({
+      ...f,
+      locked_fields: f.locked_fields.includes(field)
+        ? f.locked_fields.filter(x => x !== field)
+        : [...f.locked_fields, field],
+    }));
+  };
+
+  const handleSaveChar = async () => {
+    if (!token || !activeWorkId || !charForm.name.trim()) return;
+    const slug = charForm.slug.trim() || slugify(charForm.name);
+    setContentMsg("");
+    try {
+      await api.putCharacter(token, activeWorkId, slug, {
+        name: charForm.name.trim(),
+        data: {
+          persona: charForm.persona || undefined,
+          speech_style: charForm.speech_style || undefined,
+          will_not_do: charForm.will_not_do ? charForm.will_not_do.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
+          forbidden_topics: charForm.forbidden_topics ? charForm.forbidden_topics.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
+        },
+        locked_fields: charForm.locked_fields,
+      });
+      setCharFormOpen(false);
+      await loadWorkContent(activeWorkId);
+    } catch (e) {
+      setContentMsg(String(e instanceof Error ? e.message : e));
+    }
+  };
+
+  const handleDeleteChar = async (workId: string, slug: string) => {
+    if (!token) return;
+    if (!confirm(`「${slug}」を削除しますか？`)) return;
+    setContentMsg("");
+    try {
+      await api.deleteCharacter(token, workId, slug);
+      await loadWorkContent(workId);
+    } catch (e) {
+      setContentMsg(String(e instanceof Error ? e.message : e));
+    }
+  };
+
+  const handleSaveSummaryRow = async (workId: string, idx: number) => {
+    if (!token) return;
+    const row = summaryRows[idx];
+    setSummaryRows(rows => rows.map((r, i) => i === idx ? { ...r, saving: true } : r));
+    try {
+      await api.putSummary(token, workId, row.chapter_number, { summary: row.summary, locked: row.locked });
+      setSummaryRows(rows => rows.map((r, i) => i === idx ? { ...r, saving: false } : r));
+    } catch (e) {
+      setContentMsg(String(e instanceof Error ? e.message : e));
+      setSummaryRows(rows => rows.map((r, i) => i === idx ? { ...r, saving: false } : r));
+    }
+  };
+
+  const handleDeleteSummaryRow = async (workId: string, idx: number) => {
+    if (!token) return;
+    const row = summaryRows[idx];
+    if (!confirm(`第${row.chapter_number}章のサマリーを削除しますか？`)) return;
+    try {
+      await api.deleteSummary(token, workId, row.chapter_number);
+      setSummaryRows(rows => rows.filter((_, i) => i !== idx));
+    } catch (e) {
+      setContentMsg(String(e instanceof Error ? e.message : e));
+    }
+  };
+
+  const handleAddSummaryRow = async (workId: string) => {
+    if (!token) return;
+    const num = parseInt(newSummaryRow.chapter_number, 10);
+    if (isNaN(num) || num < 1 || !newSummaryRow.summary.trim()) return;
+    try {
+      await api.putSummary(token, workId, num, { summary: newSummaryRow.summary.trim(), locked: newSummaryRow.locked });
+      setNewSummaryRow({ chapter_number: "", summary: "", locked: false });
+      await loadWorkContent(workId);
+    } catch (e) {
+      setContentMsg(String(e instanceof Error ? e.message : e));
+    }
+  };
 
   if (loading) return (
     <main className="max-w-md mx-auto px-6 py-16 text-center text-gray-500">読み込み中...</main>
@@ -217,7 +363,7 @@ export function DashboardPage() {
         <div className="space-y-3">
           <h2 className="text-base font-semibold text-gray-300">登録作品</h2>
           {author.works.map(w => (
-            <div key={w.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div key={w.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-medium text-sm">{w.title}</p>
@@ -227,6 +373,156 @@ export function DashboardPage() {
                   {w.status === "approved" ? "承認済" : "審査待ち"}
                 </span>
               </div>
+
+              {w.status === "approved" && (
+                <button
+                  className="text-indigo-400 text-xs hover:underline"
+                  onClick={() => toggleWorkManage(w.id)}
+                >
+                  {activeWorkId === w.id ? "▲ 閉じる" : "▼ キャラクター・サマリーを管理"}
+                </button>
+              )}
+
+              {activeWorkId === w.id && (
+                <div className="space-y-5 pt-1">
+                  {contentLoading && <p className="text-xs text-gray-500">読み込み中...</p>}
+                  {contentMsg && <p className="text-xs text-red-400">{contentMsg}</p>}
+
+                  {/* ── キャラクター管理 ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">キャラクター</p>
+                      <button
+                        className="text-xs text-indigo-400 hover:underline"
+                        onClick={() => { setCharFormOpen(p => !p); if (charFormOpen) setEditingSlug(null); }}
+                      >
+                        {charFormOpen ? "閉じる" : "＋ 追加"}
+                      </button>
+                    </div>
+
+                    {workCharacters.length === 0 && !charFormOpen && (
+                      <p className="text-xs text-gray-600">登録なし</p>
+                    )}
+
+                    {workCharacters.map(char => (
+                      <div key={char.slug} className="flex items-center justify-between bg-gray-800 rounded px-3 py-2">
+                        <div>
+                          <span className="text-sm text-gray-200">{char.name}</span>
+                          <span className="text-xs text-gray-500 ml-2">/{char.slug}</span>
+                          {char.locked_fields.length > 0 && (
+                            <span className="ml-2 text-xs text-yellow-500">🔒 {char.locked_fields.join(", ")}</span>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button className="text-xs text-indigo-400 hover:underline" onClick={() => openCharForm(char)}>編集</button>
+                          <button className="text-xs text-red-400 hover:underline" onClick={() => handleDeleteChar(w.id, char.slug)}>削除</button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {charFormOpen && (
+                      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+                        <p className="text-xs font-semibold text-gray-300">{editingSlug ? "キャラクターを編集" : "キャラクターを追加"}</p>
+                        <div className="space-y-2">
+                          <input required className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                            placeholder="名前 *" value={charForm.name}
+                            onChange={e => setCharForm(f => ({ ...f, name: e.target.value, slug: f.slug || slugify(e.target.value) }))} />
+                          <input className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono"
+                            placeholder="スラッグ (自動生成)" value={charForm.slug}
+                            onChange={e => setCharForm(f => ({ ...f, slug: e.target.value }))} />
+                          <textarea rows={3} className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                            placeholder="ペルソナ" value={charForm.persona}
+                            onChange={e => setCharForm(f => ({ ...f, persona: e.target.value }))} />
+                          <input className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                            placeholder="話し方" value={charForm.speech_style}
+                            onChange={e => setCharForm(f => ({ ...f, speech_style: e.target.value }))} />
+                          <textarea rows={2} className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                            placeholder="やらないこと（1行1項目）" value={charForm.will_not_do}
+                            onChange={e => setCharForm(f => ({ ...f, will_not_do: e.target.value }))} />
+                          <textarea rows={2} className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                            placeholder="禁止トピック（1行1項目）" value={charForm.forbidden_topics}
+                            onChange={e => setCharForm(f => ({ ...f, forbidden_topics: e.target.value }))} />
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-400">ロックするフィールド（読者は変更不可）</p>
+                            <div className="flex flex-wrap gap-2">
+                              {(["persona", "speech_style", "will_not_do", "forbidden_topics"] as LockedField[]).map(f => (
+                                <label key={f} className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+                                  <input type="checkbox" checked={charForm.locked_fields.includes(f)} onChange={() => toggleLockedField(f)} />
+                                  {f}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setCharFormOpen(false); setEditingSlug(null); }}
+                            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white rounded px-3 py-1.5 text-sm">
+                            キャンセル
+                          </button>
+                          <button onClick={handleSaveChar} disabled={!charForm.name.trim()}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded px-3 py-1.5 text-sm font-medium">
+                            保存
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── 章サマリー管理 ── */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">章サマリー</p>
+
+                    {summaryRows.length === 0 && (
+                      <p className="text-xs text-gray-600">登録なし</p>
+                    )}
+
+                    {summaryRows.map((row, idx) => (
+                      <div key={row.chapter_number} className="bg-gray-800 border border-gray-700 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">第{row.chapter_number}章</span>
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+                              <input type="checkbox" checked={row.locked}
+                                onChange={e => setSummaryRows(rows => rows.map((r, i) => i === idx ? { ...r, locked: e.target.checked } : r))} />
+                              ロック
+                            </label>
+                            <button className="text-xs text-red-400 hover:underline" onClick={() => handleDeleteSummaryRow(w.id, idx)}>削除</button>
+                          </div>
+                        </div>
+                        <textarea rows={3} className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                          value={row.summary}
+                          onChange={e => setSummaryRows(rows => rows.map((r, i) => i === idx ? { ...r, summary: e.target.value } : r))} />
+                        <button onClick={() => handleSaveSummaryRow(w.id, idx)} disabled={row.saving}
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded px-3 py-1.5 text-xs font-medium">
+                          {row.saving ? "保存中..." : "保存"}
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* 新しい章を追加 */}
+                    <div className="bg-gray-800 border border-dashed border-gray-600 rounded-lg p-3 space-y-2">
+                      <p className="text-xs text-gray-500">＋ 章を追加</p>
+                      <input type="number" min={1} className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                        placeholder="章番号" value={newSummaryRow.chapter_number}
+                        onChange={e => setNewSummaryRow(r => ({ ...r, chapter_number: e.target.value }))} />
+                      <textarea rows={3} className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
+                        placeholder="サマリー本文" value={newSummaryRow.summary}
+                        onChange={e => setNewSummaryRow(r => ({ ...r, summary: e.target.value }))} />
+                      <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+                        <input type="checkbox" checked={newSummaryRow.locked}
+                          onChange={e => setNewSummaryRow(r => ({ ...r, locked: e.target.checked }))} />
+                        ロック（読者は変更不可）
+                      </label>
+                      <button
+                        onClick={() => handleAddSummaryRow(w.id)}
+                        disabled={!newSummaryRow.chapter_number || !newSummaryRow.summary.trim()}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded px-3 py-1.5 text-xs font-medium">
+                        追加
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

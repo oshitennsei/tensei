@@ -3,6 +3,7 @@ import {
   getPortalSession, clearPortalSession, portalLogin, portalMe, portalRequestCode,
   portalRegisterWork, verifyCodeOnKakuyomu, type PortalAuthor,
 } from "@/lib/portal";
+import { db } from "@/lib/storage";
 import { useStrings } from "@/lib/i18n";
 
 type Step = "idle" | "login-sent" | "requesting" | "code" | "verifying" | "done" | "error";
@@ -85,12 +86,17 @@ export function WorkRegisterScreen({ onBack }: { onBack: () => void }) {
         setMsg("作品紹介にコードが見つかりません。追記して保存してからもう一度。");
         return;
       }
-      await portalRegisterWork(session, {
+      const registered = await portalRegisterWork(session, {
         title: workTitle || "（タイトル未設定）",
         platform: "kakuyomu",
         platform_url: workInfo.canonical,
         client_snapshot: snapshot,
       });
+      // Link portal work ID to local Work record for sync
+      const localWork = await db.works.where("platform_url").equals(workInfo.canonical).first();
+      if (localWork && registered.work_id) {
+        await db.works.update(localWork.id, { portal_work_id: registered.work_id });
+      }
       setStep("done");
     } catch (e) { setStep("code"); setMsg(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }

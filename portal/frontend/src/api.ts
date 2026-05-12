@@ -23,6 +23,73 @@ async function get<T>(path: string, token?: string): Promise<T> {
   return data as T;
 }
 
+async function put<T>(path: string, body: unknown, token?: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { error: string }).error ?? res.statusText);
+  return data as T;
+}
+
+async function del<T>(path: string, token?: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { error: string }).error ?? res.statusText);
+  return data as T;
+}
+
+// ── Phase 6 types ─────────────────────────────────────────────────────────────
+
+export type LockedField = "persona" | "speech_style" | "will_not_do" | "forbidden_topics";
+
+export interface PortalCharacter {
+  id: string;
+  work_id: string;
+  slug: string;
+  name: string;
+  data: {
+    persona?: string;
+    speech_style?: string;
+    will_do?: string[];
+    will_not_do?: string[];
+    forbidden_topics?: string[];
+    voice_samples?: Array<{ context: string; line: string; chapter?: number }>;
+    dialogue_examples?: Array<{ context: string; user_message_pattern: string; ideal_response: string; notes?: string }>;
+    state_snapshots?: unknown[];
+  };
+  locked_fields: LockedField[];
+  updated_at: number;
+}
+
+export interface PortalChapterSummary {
+  id: string;
+  work_id: string;
+  chapter_number: number;
+  summary: string;
+  locked: boolean;
+  updated_at: number;
+}
+
+export interface PutCharacterBody {
+  name: string;
+  data: PortalCharacter["data"];
+  locked_fields: LockedField[];
+}
+
+export interface PutSummaryBody {
+  summary: string;
+  locked?: boolean;
+}
+
 export interface AuthorData {
   author_id: string;
   display_name: string;
@@ -50,6 +117,20 @@ export const api = {
       { title, platform, platform_url, github_handle },
       token,
     ),
+
+  // Works content (Phase 6)
+  getCharacters: (work_id: string) =>
+    get<{ characters: PortalCharacter[] }>(`/works/${work_id}/characters`),
+  putCharacter: (token: string, work_id: string, slug: string, body: PutCharacterBody) =>
+    put<{ ok: boolean; character: PortalCharacter }>(`/works/${work_id}/characters/${slug}`, body, token),
+  deleteCharacter: (token: string, work_id: string, slug: string) =>
+    del<{ ok: boolean }>(`/works/${work_id}/characters/${slug}`, token),
+  getSummaries: (work_id: string) =>
+    get<{ summaries: PortalChapterSummary[] }>(`/works/${work_id}/summaries`),
+  putSummary: (token: string, work_id: string, chapter_number: number, body: PutSummaryBody) =>
+    put<{ ok: boolean }>(`/works/${work_id}/summaries/${chapter_number}`, body, token),
+  deleteSummary: (token: string, work_id: string, chapter_number: number) =>
+    del<{ ok: boolean }>(`/works/${work_id}/summaries/${chapter_number}`, token),
 
   admin: {
     queue: (secret: string) => get<{ authors: unknown[] }>("/admin/queue", secret),

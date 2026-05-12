@@ -7,6 +7,10 @@ import type { Work, Session, Entity, PerformanceSession } from "@/lib/storage";
 import { getWorkBackgroundState, setWorkBackground, setWorkBackgroundValue, clearWorkBackground, GRADIENT_PRESETS, DEFAULT_BG } from "@/lib/background";
 import { useBackground } from "../context/BackgroundContext";
 import { useStrings } from "@/lib/i18n";
+import {
+  getPortalSession, portalMe, portalGetCharacters, portalGetSummaries, portalPutCharacters,
+  type PortalAuthor,
+} from "@/lib/portal";
 
 interface Props {
   work: Work;
@@ -27,6 +31,10 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [workBgState, setWorkBgState] = useState<{ image: string | null; value: string | null }>({ image: null, value: null });
+  const [portalSession, setPortalSession] = useState<string | null>(null);
+  const [portalAuthor, setPortalAuthor] = useState<PortalAuthor | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
   const [showBgPanel, setShowBgPanel] = useState(false);
   const [bgColorInput, setBgColorInput] = useState("#1a1a2e");
   const bgFileRef = useRef<HTMLInputElement>(null);
@@ -45,6 +53,11 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
   useEffect(() => {
     reload();
     getWorkBackgroundState(work.id).then(setWorkBgState);
+    getPortalSession().then(async token => {
+      if (!token) return;
+      const me = await portalMe(token);
+      if (me) { setPortalSession(token); setPortalAuthor(me); }
+    }).catch(() => {});
   }, [work.id]);
 
   const refreshWorkBg = async () => {
@@ -154,6 +167,127 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
     onWorkDeleted();
   };
 
+  const isAuthorOfThisWork =
+    portalAuthor != null &&
+    work.portal_work_id != null &&
+    portalAuthor.works.some(w => w.id === work.portal_work_id);
+
+  const handleSyncFromPortal = async () => {
+    if (!work.portal_work_id) return;
+    setSyncing(true); setSyncMsg("");
+    try {
+      const [portalChars, portalSummaries] = await Promise.all([
+        portalGetCharacters(work.portal_work_id),
+        portalGetSummaries(work.portal_work_id),
+      ]);
+
+      if (portalChars.length === 0 && portalSummaries.length === 0) {
+        setSyncMsg("ポータルにデータがありません。");
+        return;
+      }
+
+      const charNames = portalChars.map(c => c.name).join("、");
+      const confirmMsg =
+        "以下を上書きします：\n" +
+        (charNames ? `• キャラクター設定: ${charNames}\n` : "") +
+        (portalSummaries.length > 0 ? `• 章サマリー: ${portalSummaries.length}件\n` : "") +
+        "\n※ チャット履歴・ボイスサンプルは保持されます。よろしいですか？";
+      if (!confirm(confirmMsg)) return;
+
+      // Apply characters
+      const allEntities = await db.entities
+        .where("work_id").equals(work.id)
+        .filter(e => e.type === "character").toArray();
+      const allExts = await db.characters_extended.where("work_id").equals(work.id).toArray();
+      const extMap = new Map(allExts.map(e => [e.id, e]));
+
+      for (const portalChar of portalChars) {
+        const entity = allEntities.find(
+          e => e.canonical_name.trim().toLowerCase() === portalChar.name.trim().toLowerCase(),
+        );
+        if (!entity) continue;
+        const existing = extMap.get(entity.id);
+        if (!existing) continue;
+
+        await db.characters_extended.update(entity.id, {
+          persona: portalChar.data.persona ?? existing.persona,
+          speech_style: portalChar.data.speech_style ?? existing.speech_style,
+          will_do: portalChar.data.will_do ?? existing.will_do,
+          will_not_do: portalChar.data.will_not_do ?? existing.will_not_do,
+          forbidden_topics: portalChar.data.forbidden_topics ?? existing.forbidden_topics,
+          dialogue_examples: portalChar.data.dialogue_examples ?? existing.dialogue_examples,
+          state_snapshots: (portalChar.data.state_snapshots as typeof existing.state_snapshots | undefined) ?? existing.state_snapshots,
+          // Preserve reader's voice samples; use portal's only if reader has none
+          voice_samples: existing.voice_samples.length > 0
+            ? existing.voice_samples
+            : (portalChar.data.voice_samples ?? existing.voice_samples),
+          author_provided: true,
+          locked_fields: portalChar.locked_fields,
+          author_authorization_id: portalChar.id,
+        });
+      }
+
+      // Apply chapter summaries
+      for (const ps of portalSummaries) {
+        const chapter = await db.chapters
+          .where("[work_id+chapter_number]")
+          .equals([work.id, ps.chapter_number])
+          .first();
+        if (chapter) {
+          await db.chapters.update(chapter.id, { author_summary: ps.summary });
+        }
+      }
+
+      setSyncMsg(`取得完了。キャラクター${portalChars.length}件・章サマリー${portalSummaries.length}件。`);
+    } catch (e) {
+      setSyncMsg(`エラー: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handlePushToPortal = async () => {
+    if (!portalSession || !work.portal_work_id) return;
+    setSyncing(true); setSyncMsg("");
+    try {
+      const allEntities = await db.entities
+        .where("work_id").equals(work.id)
+        .filter(e => e.type === "character").toArray();
+      const allExts = await db.characters_extended.where("work_id").equals(work.id).toArray();
+      const extMap = new Map(allExts.map(e => [e.id, e]));
+
+      const payload = allEntities
+        .filter(e => extMap.has(e.id))
+        .map(e => {
+          const ext = extMap.get(e.id)!;
+          const slug = e.canonical_name.toLowerCase()
+            .replace(/[^\w\s-]/g, "").replace(/[\s_]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+          return {
+            slug,
+            name: e.canonical_name,
+            data: {
+              persona: ext.persona,
+              speech_style: ext.speech_style,
+              will_do: ext.will_do,
+              will_not_do: ext.will_not_do,
+              forbidden_topics: ext.forbidden_topics,
+              voice_samples: ext.voice_samples,
+              dialogue_examples: ext.dialogue_examples,
+              state_snapshots: ext.state_snapshots as unknown[],
+            },
+            locked_fields: ext.locked_fields ?? [],
+          };
+        });
+
+      await portalPutCharacters(portalSession, work.portal_work_id, payload);
+      setSyncMsg(`${payload.length}件のキャラクターをポータルに送信しました。`);
+    } catch (e) {
+      setSyncMsg(`エラー: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
@@ -236,6 +370,24 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
           <Button variant="ghost" className="w-full" onClick={onManageCharacters}>
             {str.work_manage_chars}
           </Button>
+          {work.portal_work_id && (
+            <>
+              <Button variant="ghost" className="w-full" onClick={handleSyncFromPortal} disabled={syncing}>
+                {syncing ? "取得中..." : "作者版を取得"}
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={() =>
+                chrome.tabs.create({ url: "https://tensei-portal.pages.dev/dashboard" })
+              }>
+                ポータルを開く
+              </Button>
+            </>
+          )}
+          {isAuthorOfThisWork && (
+            <Button variant="ghost" className="w-full" onClick={handlePushToPortal} disabled={syncing}>
+              {syncing ? "送信中..." : "ポータルに送信"}
+            </Button>
+          )}
+          {syncMsg && <p className="text-xs text-gray-500 text-center">{syncMsg}</p>}
         </div>
 
         {/* Performance sessions */}

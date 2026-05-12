@@ -21,6 +21,7 @@ export interface Work {
   platform: Platform;
   source_type: SourceType;
   platform_url?: string;              // canonical URL on the source platform
+  portal_work_id?: string;            // portal works.id — set after author registration linkage
   authorization_record_url?: string;
   last_updated: number; // epoch ms
   background_image?: Blob;
@@ -53,6 +54,7 @@ export interface Chapter {
   chunk_ids: string[];
   event_ids?: string[];
   embedding_summary?: Float32Array;
+  author_summary?: string;            // author-provided from portal; shown preferentially over LLM summaries
 }
 
 export interface Scene {

@@ -65,6 +65,86 @@ export async function portalRegisterWork(token: string, params: {
   return { work_id: data.work_id!, slug: data.slug! };
 }
 
+// ── Phase 6: character + summary sync ────────────────────────────────────────
+
+export type LockedField = "persona" | "speech_style" | "will_not_do" | "forbidden_topics";
+
+export interface PortalCharacterResult {
+  id: string;
+  slug: string;
+  name: string;
+  data: {
+    persona?: string;
+    speech_style?: string;
+    will_do?: string[];
+    will_not_do?: string[];
+    forbidden_topics?: string[];
+    voice_samples?: Array<{ context: string; line: string; chapter?: number }>;
+    dialogue_examples?: Array<{ context: string; user_message_pattern: string; ideal_response: string; notes?: string }>;
+    state_snapshots?: unknown[];
+  };
+  locked_fields: LockedField[];
+  updated_at: number;
+}
+
+export interface PortalSummaryResult {
+  chapter_number: number;
+  summary: string;
+  locked: boolean;
+  updated_at: number;
+}
+
+export async function portalGetCharacters(workId: string): Promise<PortalCharacterResult[]> {
+  try {
+    const res = await fetch(`${PORTAL_BASE}/works/${workId}/characters`);
+    if (!res.ok) return [];
+    const data = await res.json() as { characters?: PortalCharacterResult[] };
+    return data.characters ?? [];
+  } catch { return []; }
+}
+
+export async function portalGetSummaries(workId: string): Promise<PortalSummaryResult[]> {
+  try {
+    const res = await fetch(`${PORTAL_BASE}/works/${workId}/summaries`);
+    if (!res.ok) return [];
+    const data = await res.json() as { summaries?: PortalSummaryResult[] };
+    return data.summaries ?? [];
+  } catch { return []; }
+}
+
+export async function portalPutCharacters(
+  token: string,
+  workId: string,
+  characters: Array<{
+    slug: string;
+    name: string;
+    data: PortalCharacterResult["data"];
+    locked_fields: LockedField[];
+  }>,
+): Promise<void> {
+  for (const char of characters) {
+    await fetch(`${PORTAL_BASE}/works/${workId}/characters/${char.slug}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: char.name, data: char.data, locked_fields: char.locked_fields }),
+    });
+  }
+}
+
+export async function portalPutSummary(
+  token: string,
+  workId: string,
+  chapterNum: number,
+  summary: string,
+  locked = false,
+): Promise<void> {
+  await fetch(`${PORTAL_BASE}/works/${workId}/summaries/${chapterNum}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ summary, locked }),
+  });
+}
+
 export async function verifyCodeOnKakuyomu(workId: string, code: string): Promise<string | null> {
   try {
     const res = await fetch(`https://kakuyomu.jp/works/${workId}`);

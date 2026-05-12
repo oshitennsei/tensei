@@ -132,6 +132,8 @@ class TenseiDb extends Dexie {
     this.version(11).stores({});  // supplementary_material added to ProductionPlan (no new indexed stores)
 
     this.version(12).stores({});  // segmented_source_text added to ProductionPlan (no new indexed stores)
+
+    this.version(13).stores({});  // portal_work_id on Work, author_summary on Chapter (Phase 6)
   }
 }
 

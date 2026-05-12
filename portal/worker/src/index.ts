@@ -6,6 +6,7 @@ import { adminRoutes } from "./routes/admin";
 import { statusRoutes } from "./routes/status";
 import { whitelist } from "./routes/whitelist";
 import { authRoutes } from "./routes/auth";
+import { worksContentRoutes } from "./routes/works_content";
 
 export interface Env {
   DB: D1Database;
@@ -24,7 +25,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors({
   origin: (origin) => origin ?? "*",
-  allowMethods: ["GET", "POST", "OPTIONS"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],
 }));
 
@@ -36,5 +37,6 @@ app.route("/auth",      authRoutes);
 app.route("/status",    statusRoutes);
 app.route("/admin",     adminRoutes);
 app.route("/whitelist", whitelist);
+app.route("/works",     worksContentRoutes);
 
 export default app;
