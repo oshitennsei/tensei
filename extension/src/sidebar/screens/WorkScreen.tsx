@@ -9,7 +9,7 @@ import { useBackground } from "../context/BackgroundContext";
 import { useStrings } from "@/lib/i18n";
 import {
   getPortalSession, portalMe, portalGetCharacters, portalGetSummaries, portalPutCharacters,
-  type PortalAuthor,
+  portalCheckWorkLink, type PortalAuthor,
 } from "@/lib/portal";
 
 interface Props {
@@ -58,6 +58,14 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
       const me = await portalMe(token);
       if (me) { setPortalSession(token); setPortalAuthor(me); }
     }).catch(() => {});
+    // Auto-link portal_work_id by platform_url if not yet set
+    if (!work.portal_work_id && work.platform_url) {
+      portalCheckWorkLink(work.platform_url).then(async portalWorkId => {
+        if (portalWorkId) {
+          await db.works.update(work.id, { portal_work_id: portalWorkId });
+        }
+      }).catch(() => {});
+    }
   }, [work.id]);
 
   const refreshWorkBg = async () => {

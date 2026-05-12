@@ -65,6 +65,15 @@ export async function portalRegisterWork(token: string, params: {
   return { work_id: data.work_id!, slug: data.slug! };
 }
 
+export async function portalCheckWorkLink(platformUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${PORTAL_BASE}/whitelist?work_url=${encodeURIComponent(platformUrl)}`);
+    if (!res.ok) return null;
+    const data = await res.json() as { authorized: boolean; work?: { id: string } };
+    return data.authorized && data.work?.id ? data.work.id : null;
+  } catch { return null; }
+}
+
 // ── Phase 6: character + summary sync ────────────────────────────────────────
 
 export type LockedField = "persona" | "speech_style" | "will_not_do" | "forbidden_topics";
