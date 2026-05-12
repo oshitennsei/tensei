@@ -3,6 +3,7 @@ import { Button } from "../components/Button";
 import { getOrCreateSkill, createBtsSession, btsChat, appendBtsTurn, listBtsSessions, generateCrewInterjection } from "@/lib/bts";
 import { db } from "@/lib/storage";
 import type { Work, PerformanceSession, PerformerSkill, Entity, BtsSession, BtsTurn, BtsLocation, BtsCrewMember } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
@@ -24,14 +25,8 @@ interface SkillWithEntity {
   entity: Entity;
 }
 
-const LOCATION_LABELS: Record<BtsLocation, string> = {
-  rest_area: "休憩室",
-  makeup_room: "化粧室",
-  set: "撮影セット",
-  cafeteria: "食堂",
-};
-
 export function BtsScreen({ work, performanceSession, onBack, initialSession, initialLocation, initialCrew }: Props) {
+  const str = useStrings();
   const [btsSession, setBtsSession] = useState<BtsSession | null>(null);
   const [skills, setSkills] = useState<SkillWithEntity[]>([]);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
@@ -44,11 +39,18 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const locationLabel = (loc: BtsLocation): string => {
+    if (loc === "rest_area")   return str.bts_loc_rest_label;
+    if (loc === "makeup_room") return str.bts_loc_makeup_label;
+    if (loc === "set")         return str.bts_loc_set_label;
+    if (loc === "cafeteria")   return str.bts_loc_cafeteria_label;
+    return loc;
+  };
+
   useEffect(() => {
     const load = async () => {
       const characterIds = performanceSession.characters_in_scene;
 
-      // Load skills and entities for each character
       const skillsWithEntities: SkillWithEntity[] = [];
       for (const charId of characterIds) {
         const [skill, entity] = await Promise.all([
@@ -65,7 +67,6 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         setSelectedSkillId(skillsWithEntities[0].skill.id);
       }
 
-      // Use initialSession if provided, otherwise find/create
       let session: BtsSession;
       if (initialSession) {
         session = initialSession;
@@ -82,13 +83,12 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
       }
       setBtsSession(session);
 
-      // Map conversation history to display messages
       const displayMessages: DisplayMessage[] = session.conversation_history.map((turn: BtsTurn) => {
         if (turn.speaker_skill_id === "user") {
-          return { role: "user" as const, speakerName: "あなた", content: turn.content };
+          return { role: "user" as const, speakerName: str.bts_you, content: turn.content };
         }
         if (turn.speaker_skill_id === "crew") {
-          return { role: "crew" as const, speakerName: "スタッフ", content: turn.content };
+          return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
         }
         const matchedSkill = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
         const speakerName = matchedSkill?.entity.canonical_name ?? turn.speaker_skill_id;
@@ -114,11 +114,9 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
     setInput("");
     setError(null);
 
-    // Add user message to display
-    setMessages(prev => [...prev, { role: "user", speakerName: "あなた", content: userMessage }]);
+    setMessages(prev => [...prev, { role: "user", speakerName: str.bts_you, content: userMessage }]);
     setStreaming(true);
 
-    // Save user turn to DB
     const userTurn: BtsTurn = {
       speaker_skill_id: "user",
       content: userMessage,
@@ -135,7 +133,6 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         setStreamingText(accumulated);
       }
 
-      // Save performer turn
       const performerTurn: BtsTurn = {
         speaker_skill_id: selectedSkillId,
         content: accumulated,
@@ -149,7 +146,6 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
       ]);
       setStreamingText("");
 
-      // Try crew interjection after performer response
       const lastExchange = `${userMessage}\n${accumulated}`;
       const crewLine = await generateCrewInterjection(btsSession, lastExchange);
       if (crewLine) {
@@ -159,11 +155,11 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
           timestamp: Date.now(),
         };
         await appendBtsTurn(btsSession.id, crewTurn);
-        setMessages(prev => [...prev, { role: "crew", speakerName: "スタッフ", content: crewLine }]);
+        setMessages(prev => [...prev, { role: "crew", speakerName: str.bts_staff, content: crewLine }]);
       }
     } catch (e: unknown) {
       if ((e as Error)?.name !== "AbortError") {
-        setError("エラーが発生しました。");
+        setError(str.bts_error);
         setStreamingText("");
       }
     } finally {
@@ -182,7 +178,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 shrink-0">
         <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
-        <p className="text-sm font-semibold flex-1">楽屋</p>
+        <p className="text-sm font-semibold flex-1">{str.bts_title}</p>
       </header>
 
       {/* Performer tabs */}
@@ -211,7 +207,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
             className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
             onClick={() => setCrewVisible(v => !v)}
           >
-            <span>スタッフ ({btsSession.present_crew.length}名)</span>
+            <span>{str.bts_crew_label(btsSession.present_crew.length)}</span>
             <span>{crewVisible ? "▲" : "▼"}</span>
           </button>
           {crewVisible && (
@@ -229,7 +225,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
       {/* Status line */}
       <div className="px-3 py-1.5 border-b border-gray-100 shrink-0">
         <p className="text-xs text-gray-400">
-          {LOCATION_LABELS[btsSession?.location ?? "rest_area"]}{selectedEntityName ? ` · ${selectedEntityName} と話す` : ""}
+          {locationLabel(btsSession?.location ?? "rest_area")}{selectedEntityName ? str.bts_talk_to(selectedEntityName) : ""}
         </p>
       </div>
 
@@ -237,7 +233,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && !streamingText && (
           <p className="text-center text-xs text-gray-400 mt-8">
-            楽屋でキャラクターと話しましょう。
+            {str.bts_empty}
           </p>
         )}
         {messages.map((msg, i) => (
@@ -259,7 +255,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="メッセージを入力..."
+            placeholder={str.bts_placeholder}
             className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -272,7 +268,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
             disabled={streaming || !input.trim()}
             className="self-end"
           >
-            送信
+            {str.bts_send}
           </Button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { Button } from "../components/Button";
 import { generateBtsSetup, createBtsSession } from "@/lib/bts";
 import type { BtsSetup } from "@/lib/bts";
 import type { Work, PerformanceSession, BtsLocation, BtsSession } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
@@ -17,19 +18,20 @@ interface LocationOption {
   sublabel: string;
 }
 
-const LOCATION_OPTIONS: LocationOption[] = [
-  { value: "makeup_room", label: "化粧室", sublabel: "ヘアメイク・衣装" },
-  { value: "set", label: "撮影セット", sublabel: "照明・収音あり" },
-  { value: "rest_area", label: "休憩室", sublabel: "のんびり" },
-  { value: "cafeteria", label: "食堂", sublabel: "食事・雑談" },
-];
-
 export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Props) {
+  const str = useStrings();
   const [mode, setMode] = useState<"quick" | "describe">("quick");
   const [quickLocation, setQuickLocation] = useState<BtsLocation>("rest_area");
   const [description, setDescription] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+
+  const locationOptions: LocationOption[] = [
+    { value: "makeup_room", label: str.bts_loc_makeup,    sublabel: str.bts_loc_makeup_sub },
+    { value: "set",         label: str.bts_loc_set,       sublabel: str.bts_loc_set_sub },
+    { value: "rest_area",   label: str.bts_loc_rest,      sublabel: str.bts_loc_rest_sub },
+    { value: "cafeteria",   label: str.bts_loc_cafeteria, sublabel: str.bts_loc_cafeteria_sub },
+  ];
 
   const handleEnter = async () => {
     if (generating) return;
@@ -58,7 +60,7 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
         onReady(setup, session);
       }
     } catch (e: unknown) {
-      setError((e as Error)?.message ?? "エラーが発生しました。");
+      setError((e as Error)?.message ?? str.bts_error);
     } finally {
       setGenerating(false);
     }
@@ -66,13 +68,11 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 shrink-0">
         <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
-        <p className="text-sm font-semibold flex-1">楽屋の設定</p>
+        <p className="text-sm font-semibold flex-1">{str.bts_brief_title}</p>
       </header>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
         {/* Mode tabs */}
         <div className="flex gap-2">
@@ -84,7 +84,7 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
             }`}
             onClick={() => setMode("quick")}
           >
-            クイック設定
+            {str.bts_quick}
           </button>
           <button
             className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
@@ -94,14 +94,14 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
             }`}
             onClick={() => setMode("describe")}
           >
-            詳細設定（AI）
+            {str.bts_describe_mode}
           </button>
         </div>
 
         {/* Quick mode panel */}
         {mode === "quick" && (
           <div className="grid grid-cols-2 gap-2">
-            {LOCATION_OPTIONS.map(opt => (
+            {locationOptions.map(opt => (
               <button
                 key={opt.value}
                 className={`flex flex-col items-start px-3 py-2.5 rounded border text-left transition-colors ${
@@ -123,7 +123,7 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
           <div>
             <textarea
               rows={4}
-              placeholder="例：化粧室でエレナ役の声優と監督が次の幕を相談している"
+              placeholder={str.bts_describe_ph}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -132,7 +132,6 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
         )}
       </div>
 
-      {/* Footer */}
       <div className="border-t border-gray-200 p-4 shrink-0">
         {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
         <Button
@@ -140,7 +139,7 @@ export function BtsBriefScreen({ work, performanceSession, onBack, onReady }: Pr
           disabled={generating || (mode === "describe" && !description.trim())}
           onClick={handleEnter}
         >
-          {generating ? "設定中..." : "楽屋へ入る →"}
+          {generating ? str.bts_entering : str.bts_enter}
         </Button>
       </div>
     </div>

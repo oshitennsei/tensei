@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "../components/Button";
 import { listWorks } from "@/lib/ingestion";
 import type { Work } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   onSelectWork: (work: Work) => void;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function HomeScreen({ onSelectWork, onIngest, onSettings }: Props) {
+  const str = useStrings();
   const [works, setWorks] = useState<Work[]>([]);
 
   useEffect(() => { listWorks().then(setWorks); }, []);
@@ -17,18 +19,18 @@ export function HomeScreen({ onSelectWork, onIngest, onSettings }: Props) {
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
-        <h1 className="text-sm font-semibold">転生してきた件</h1>
+        <h1 className="text-sm font-semibold">{str.home_title}</h1>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={onIngest}>+ 取り込み</Button>
-          <Button variant="ghost" size="sm" onClick={onSettings}>設定</Button>
+          <Button variant="ghost" size="sm" onClick={onIngest}>{str.home_ingest_btn}</Button>
+          <Button variant="ghost" size="sm" onClick={onSettings}>{str.home_settings_btn}</Button>
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto">
         {works.length === 0 ? (
           <div className="text-center text-sm text-gray-400 mt-16 px-4 space-y-3">
-            <p>作品がまだありません。</p>
-            <Button onClick={onIngest}>テキストを取り込む</Button>
+            <p>{str.home_empty}</p>
+            <Button onClick={onIngest}>{str.home_cta}</Button>
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">

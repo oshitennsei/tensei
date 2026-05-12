@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { Button } from "../components/Button";
 import { updatePlan } from "@/lib/performance";
+import { useStrings } from "@/lib/i18n";
 import type { Work, PerformanceSession, ProductionPlan, ResearchRound } from "@/lib/storage";
 
 interface Props {
@@ -13,15 +14,8 @@ interface Props {
 
 type PlanTextField = "where" | "when" | "what" | "why" | "how";
 
-const FIELD_LABELS: Record<PlanTextField, string> = {
-  where: "どこで (Where)",
-  when:  "いつ (When)",
-  what:  "何が起きる (What)",
-  why:   "なぜ (Why)",
-  how:   "どのように (How)",
-};
-
 export function ProductionPlanScreen({ work: _work, session: _session, plan, onBack, onStart }: Props) {
+  const str = useStrings();
   const [localPlan, setLocalPlan] = useState<ProductionPlan>({ ...plan });
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editingBeat, setEditingBeat] = useState<number | null>(null);
@@ -30,13 +24,20 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
   const [dragOver, setDragOver] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
 
+  const FIELD_LABELS: Record<PlanTextField, string> = {
+    where: str.field_where,
+    when:  str.field_when,
+    what:  str.field_what,
+    why:   str.field_why,
+    how:   str.field_how,
+  };
+
   const persist = async (updates: Partial<ProductionPlan>) => {
     const updated = { ...localPlan, ...updates };
     setLocalPlan(updated);
     await updatePlan(localPlan.id, updates);
   };
 
-  // Beat drag handlers
   const handleDragStart = (idx: number) => { dragIndexRef.current = idx; };
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
@@ -62,9 +63,9 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 shrink-0">
         <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
-        <p className="text-sm font-semibold flex-1">演出計画</p>
+        <p className="text-sm font-semibold flex-1">{str.plan_screen_title}</p>
         <Button size="sm" onClick={() => onStart(localPlan)}>
-          演出開始 →
+          {str.plan_screen_start}
         </Button>
       </header>
 
@@ -72,11 +73,11 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
 
         {/* ① 5W セクション */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-3">5W1H</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-3">{str.plan_5w1h}</p>
 
           {/* who — chips display */}
           <div className="border-b border-gray-100 pb-3 mb-3">
-            <p className="text-xs font-semibold text-gray-500 mb-1">登場人物 (Who)</p>
+            <p className="text-xs font-semibold text-gray-500 mb-1">{str.plan_who}</p>
             <div className="flex flex-wrap gap-1">
               {localPlan.who.map(name => (
                 <span
@@ -87,7 +88,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
                 </span>
               ))}
               {localPlan.who.length === 0 && (
-                <span className="text-xs text-gray-300">（未入力）</span>
+                <span className="text-xs text-gray-300">{str.plan_empty}</span>
               )}
             </div>
           </div>
@@ -119,7 +120,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
                       <span className="text-xs text-gray-300 ml-1">✎</span>
                     </>
                   ) : (
-                    <span className="text-gray-300">（未入力）<span className="text-xs ml-1">✎</span></span>
+                    <span className="text-gray-300">{str.plan_empty}<span className="text-xs ml-1">✎</span></span>
                   )}
                 </p>
               )}
@@ -129,7 +130,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
 
         {/* ② 道具 */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">道具</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_props_label}</p>
           <div className="flex flex-wrap gap-1 mb-1">
             {localPlan.props.map(prop => (
               <span
@@ -149,7 +150,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
           <div className="flex gap-1 mt-1">
             <input
               className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="道具を追加..."
+              placeholder={str.plan_add_prop}
               value={newProp}
               onChange={e => setNewProp(e.target.value)}
               onKeyDown={e => {
@@ -164,7 +165,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
 
         {/* トーン */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">トーン</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_tone_label}</p>
           <div className="flex flex-wrap gap-1 mb-1">
             {localPlan.tone_tags.map(tag => (
               <span
@@ -184,7 +185,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
           <div className="flex gap-1 mt-1">
             <input
               className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="トーンを追加..."
+              placeholder={str.plan_add_tone}
               value={newTag}
               onChange={e => setNewTag(e.target.value)}
               onKeyDown={e => {
@@ -197,86 +198,112 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
           </div>
         </section>
 
-        {/* ③ 幕の流れ */}
-        <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">幕の流れ</p>
-          <ul className="space-y-0.5">
-            {localPlan.beats.map((beat, idx) => (
-              <li
-                key={idx}
-                draggable
-                onDragStart={() => handleDragStart(idx)}
-                onDragOver={e => handleDragOver(e, idx)}
-                onDrop={e => handleDrop(e, idx)}
-                onDragEnd={handleDragEnd}
-                className={`flex items-center gap-2 py-1 px-1 rounded border transition-colors ${
-                  dragOver === idx
-                    ? "border-indigo-300 bg-indigo-50"
-                    : "border-transparent"
-                }`}
-              >
-                <span className="text-gray-300 text-xs select-none cursor-grab">⠿</span>
-                <span className="text-xs text-gray-400 w-5 shrink-0">{beat.order}.</span>
-                {editingBeat === idx ? (
-                  <input
-                    className="flex-1 border border-indigo-400 rounded px-1 py-0.5 text-xs focus:outline-none"
-                    value={beat.description}
-                    onChange={e => {
-                      const newBeats = localPlan.beats.map((b, i) =>
-                        i === idx ? { ...b, description: e.target.value } : b
-                      );
-                      setLocalPlan(p => ({ ...p, beats: newBeats }));
-                    }}
-                    onBlur={() => {
-                      persist({ beats: localPlan.beats });
-                      setEditingBeat(null);
-                    }}
-                    autoFocus
-                  />
-                ) : (
-                  <span
-                    className="flex-1 text-xs text-gray-700 cursor-pointer hover:text-indigo-600"
-                    onClick={() => setEditingBeat(idx)}
-                  >
-                    {beat.description || <span className="text-gray-300">（未入力）</span>}
-                  </span>
-                )}
-                <button
-                  className="text-gray-300 hover:text-red-400 text-xs shrink-0"
-                  onClick={() => {
-                    const newBeats = localPlan.beats
-                      .filter((_, i) => i !== idx)
-                      .map((b, i) => ({ ...b, order: i + 1 }));
-                    persist({ beats: newBeats });
-                  }}
+        {/* ③ 幕の流れ（非章節モードのみ） / Supplementary material（章節モード） */}
+        {localPlan.scene_basis === "chapter" ? (
+          <>
+            {localPlan.beats.length > 0 && (
+              <section>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_beats_label}</p>
+                <ol className="space-y-0.5">
+                  {localPlan.beats.map((beat, idx) => (
+                    <li key={idx} className="flex items-center gap-2 py-1 px-1">
+                      <span className="text-xs text-gray-400 w-5 shrink-0">{beat.order}.</span>
+                      <span className="flex-1 text-xs text-gray-700">{beat.description}</span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+            {localPlan.supplementary_material && (
+              <section>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_supplementary_label}</p>
+                <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded p-2">
+                  {localPlan.supplementary_material}
+                </p>
+              </section>
+            )}
+          </>
+        ) : (
+          <section>
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_beats_label}</p>
+            <ul className="space-y-0.5">
+              {localPlan.beats.map((beat, idx) => (
+                <li
+                  key={idx}
+                  draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={e => handleDragOver(e, idx)}
+                  onDrop={e => handleDrop(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 py-1 px-1 rounded border transition-colors ${
+                    dragOver === idx
+                      ? "border-indigo-300 bg-indigo-50"
+                      : "border-transparent"
+                  }`}
                 >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button
-            className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
-            onClick={() =>
-              persist({
-                beats: [
-                  ...localPlan.beats,
-                  { order: localPlan.beats.length + 1, description: "" },
-                ],
-              })
-            }
-          >
-            + 幕を追加
-          </button>
-        </section>
+                  <span className="text-gray-300 text-xs select-none cursor-grab">⠿</span>
+                  <span className="text-xs text-gray-400 w-5 shrink-0">{beat.order}.</span>
+                  {editingBeat === idx ? (
+                    <input
+                      className="flex-1 border border-indigo-400 rounded px-1 py-0.5 text-xs focus:outline-none"
+                      value={beat.description}
+                      onChange={e => {
+                        const newBeats = localPlan.beats.map((b, i) =>
+                          i === idx ? { ...b, description: e.target.value } : b
+                        );
+                        setLocalPlan(p => ({ ...p, beats: newBeats }));
+                      }}
+                      onBlur={() => {
+                        persist({ beats: localPlan.beats });
+                        setEditingBeat(null);
+                      }}
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="flex-1 text-xs text-gray-700 cursor-pointer hover:text-indigo-600"
+                      onClick={() => setEditingBeat(idx)}
+                    >
+                      {beat.description || <span className="text-gray-300">{str.plan_empty}</span>}
+                    </span>
+                  )}
+                  <button
+                    className="text-gray-300 hover:text-red-400 text-xs shrink-0"
+                    onClick={() => {
+                      const newBeats = localPlan.beats
+                        .filter((_, i) => i !== idx)
+                        .map((b, i) => ({ ...b, order: i + 1 }));
+                      persist({ beats: newBeats });
+                    }}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+              onClick={() =>
+                persist({
+                  beats: [
+                    ...localPlan.beats,
+                    { order: localPlan.beats.length + 1, description: "" },
+                  ],
+                })
+              }
+            >
+              {str.plan_add_beat}
+            </button>
+          </section>
+        )}
 
         {/* ④ メモ欄 */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">メモ</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_notes_label}</p>
           <textarea
             className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500"
             rows={3}
-            placeholder="追加メモや補足..."
+            placeholder={str.plan_notes_placeholder}
             value={localPlan.user_notes ?? ""}
             onChange={e => setLocalPlan(p => ({ ...p, user_notes: e.target.value }))}
             onBlur={() => persist({ user_notes: localPlan.user_notes })}
@@ -292,7 +319,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
 
       <div className="border-t border-gray-200 p-4 shrink-0">
         <Button className="w-full" onClick={() => onStart(localPlan)}>
-          演出を開始 →
+          {str.plan_screen_start}
         </Button>
       </div>
     </div>
@@ -300,6 +327,7 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
 }
 
 function DebugTracePanel({ rounds }: { rounds: ResearchRound[] }) {
+  const str = useStrings();
   const [open, setOpen] = useState(false);
   const [openRound, setOpenRound] = useState<number | null>(null);
 
@@ -310,7 +338,7 @@ function DebugTracePanel({ rounds }: { rounds: ResearchRound[] }) {
         onClick={() => setOpen(v => !v)}
       >
         <span>{open ? "▾" : "▸"}</span>
-        <span>デバッグログ（{rounds.length} ラウンド）</span>
+        <span>{str.debug_log(rounds.length)}</span>
       </button>
       {open && (
         <div className="mt-2 space-y-2 font-mono text-xs">
@@ -320,19 +348,19 @@ function DebugTracePanel({ rounds }: { rounds: ResearchRound[] }) {
                 className="w-full flex items-center justify-between px-3 py-1.5 bg-gray-50 text-gray-600 hover:bg-gray-100 text-left"
                 onClick={() => setOpenRound(openRound === r.round ? null : r.round)}
               >
-                <span>Round {r.round} — {r.sufficient ? "✓ 十分" : "→ 補充"}</span>
+                <span>Round {r.round} — {r.sufficient ? str.debug_sufficient : str.debug_more}</span>
                 <span className="text-gray-300">{openRound === r.round ? "▾" : "▸"}</span>
               </button>
               {openRound === r.round && (
                 <div className="px-3 py-2 space-y-3 bg-white text-gray-600">
                   {r.llm_plan && (
                     <div>
-                      <p className="text-gray-400 mb-1">調査計画（LLM）</p>
+                      <p className="text-gray-400 mb-1">{str.debug_research_plan}</p>
                       <p className="whitespace-pre-wrap text-gray-700">{r.llm_plan}</p>
                     </div>
                   )}
                   <div>
-                    <p className="text-gray-400 mb-1">実行タスク ({r.tasks.length}件)</p>
+                    <p className="text-gray-400 mb-1">{str.debug_tasks(r.tasks.length)}</p>
                     <ul className="space-y-1">
                       {r.tasks.map((t, i) => (
                         <li key={i} className="border-l-2 border-gray-100 pl-2">
@@ -346,7 +374,7 @@ function DebugTracePanel({ rounds }: { rounds: ResearchRound[] }) {
                   </div>
                   {r.llm_evaluation && (
                     <div>
-                      <p className="text-gray-400 mb-1">評価（LLM）</p>
+                      <p className="text-gray-400 mb-1">{str.debug_eval}</p>
                       <p className="whitespace-pre-wrap text-gray-700">{r.llm_evaluation}</p>
                     </div>
                   )}

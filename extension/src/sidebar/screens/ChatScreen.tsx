@@ -6,6 +6,7 @@ import { LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
 import type { Session, Work } from "@/lib/storage";
 import { HARD_LIMITS } from "@/lib/content-safety";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
@@ -19,6 +20,7 @@ interface Message {
 }
 
 export function ChatScreen({ work, session: initialSession, onBack }: Props) {
+  const str = useStrings();
   const [session, setSession] = useState<Session>(initialSession);
   const [messages, setMessages] = useState<Message[]>(() =>
     initialSession.tier_0_recent_turns.map(t => ({ role: t.role, content: t.content }))
@@ -31,7 +33,7 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
 
   useEffect(() => {
     db.entities.get(session.character_id).then(entity => {
-      setCharacterName(entity?.canonical_name ?? "キャラクター");
+      setCharacterName(entity?.canonical_name ?? str.chat_default_char);
     });
   }, [session.character_id]);
 
@@ -71,7 +73,7 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
       if (updated) setSession(updated);
     } catch (e: unknown) {
       if ((e as Error)?.name !== "AbortError") {
-        const msg = e instanceof LlmError ? e.userMessage : "エラーが発生しました。";
+        const msg = e instanceof LlmError ? e.userMessage : str.chat_error;
         setMessages(prev => [...prev, { role: "system", content: msg }]);
       }
     } finally {
@@ -97,16 +99,16 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
         <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{characterName}</p>
-          <p className="text-xs text-gray-400 truncate">{work.title} · 第{session.cutoff_chapter}章まで</p>
+          <p className="text-xs text-gray-400 truncate">{work.title} · {str.chat_chapter_up_to(session.cutoff_chapter)}</p>
         </div>
         <Button variant="ghost" size="sm" onClick={handleNewSession} disabled={streaming}>
-          新規
+          {str.chat_new}
         </Button>
       </header>
 
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
         {messages.length === 0 && !streaming && (
-          <p className="text-center text-xs text-gray-400 mt-8">{characterName}と会話を始めましょう。</p>
+          <p className="text-center text-xs text-gray-400 mt-8">{str.chat_start_prompt(characterName)}</p>
         )}
         {messages.map((m, i) => (
           <MessageBubble key={i} message={m} characterName={characterName} />
@@ -119,20 +121,20 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
           <textarea
             className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500"
             rows={2}
-            placeholder="メッセージを入力..."
+            placeholder={str.chat_placeholder}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             disabled={streaming}
           />
           {streaming
-            ? <Button variant="ghost" size="sm" onClick={handleStop} className="self-end">停止</Button>
-            : <Button size="sm" onClick={handleSend} disabled={!input.trim()} className="self-end">送信</Button>
+            ? <Button variant="ghost" size="sm" onClick={handleStop} className="self-end">{str.chat_stop}</Button>
+            : <Button size="sm" onClick={handleSend} disabled={!input.trim()} className="self-end">{str.chat_send}</Button>
           }
         </div>
         {remaining < 200 && (
           <p className={`text-xs mt-1 ${remaining < 0 ? "text-red-500" : "text-gray-400"}`}>
-            残り {remaining} 文字
+            {str.chat_chars_left(remaining)}
           </p>
         )}
       </div>

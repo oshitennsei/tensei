@@ -1,6 +1,7 @@
 import { db } from "@/lib/storage";
-import type { Chunk, Entity, Chapter } from "@/lib/storage";
+import type { Chunk, Entity, Chapter, Language } from "@/lib/storage";
 import { getEmbedder } from "@/lib/embedding";
+import { getStrings, langFromStorage } from "@/lib/i18n";
 
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   let dot = 0, normA = 0, normB = 0;
@@ -81,17 +82,26 @@ export async function retrieveChunks(
   cutoff_chapter: number,
   top_k = 5,
   character_id?: string,
+  anchor_chapter?: number,  // when set, restricts search to a window around this chapter
+  anchor_window = 2,
 ): Promise<RetrievalResult[]> {
   const chapters = await db.chapters
     .where("work_id").equals(work_id)
-    .filter(c => c.chapter_number <= cutoff_chapter)
+    .filter(c => {
+      if (c.chapter_number > cutoff_chapter) return false;
+      if (anchor_chapter != null) {
+        return c.chapter_number >= anchor_chapter - anchor_window &&
+               c.chapter_number <= anchor_chapter + anchor_window;
+      }
+      return true;
+    })
     .toArray();
 
   // Prioritize chapters where the character appears; limit search space
   const charChapters = character_id
     ? chapters.filter(c => c.appearing_characters.includes(character_id))
     : chapters;
-  const recent = chapters.slice(-10);
+  const recent = anchor_chapter == null ? chapters.slice(-10) : chapters;
   const searchSet = new Map([...charChapters, ...recent].map(c => [c.id, c]));
   const searchChapterIds = [...searchSet.keys()];
 
@@ -132,10 +142,19 @@ async function retrieveChunksHybrid(
   cutoff_chapter: number,
   top_k = 5,
   character_id?: string,
+  anchor_chapter?: number,
+  anchor_window = 2,
 ): Promise<RetrievalResult[]> {
   const chapters = await db.chapters
     .where("work_id").equals(work_id)
-    .filter(c => c.chapter_number <= cutoff_chapter)
+    .filter(c => {
+      if (c.chapter_number > cutoff_chapter) return false;
+      if (anchor_chapter != null) {
+        return c.chapter_number >= anchor_chapter - anchor_window &&
+               c.chapter_number <= anchor_chapter + anchor_window;
+      }
+      return true;
+    })
     .toArray();
 
   // Pre-filter chapters using chapter-level embeddings if available
@@ -208,7 +227,11 @@ export async function buildContext(
   query: string,
   cutoff_chapter: number,
   character_version_id?: string,
+  uiLang: Language = "ja",
+  top_k = 5,
 ): Promise<string> {
+  const s = getStrings(langFromStorage(uiLang));
+
   const embedder = await getEmbedder();
   let queryEmbedding: Float32Array | null = null;
   if (embedder) {
@@ -216,7 +239,7 @@ export async function buildContext(
   }
 
   const [chunks, relatedEntities, character, characterExt, allChapters] = await Promise.all([
-    retrieveChunksHybrid(work_id, query, queryEmbedding, cutoff_chapter, 5, character_id),
+    retrieveChunksHybrid(work_id, query, queryEmbedding, cutoff_chapter, top_k, character_id),
     retrieveEntities(work_id, query, 5),
     db.entities.get(character_id),
     db.characters_extended.get(character_id),
@@ -230,14 +253,14 @@ export async function buildContext(
 
   // Character info
   const snapshot = character_version_id && character_version_id !== "base" && characterExt
-    ? characterExt.state_snapshots.find(s => s.id === character_version_id)
+    ? characterExt.state_snapshots.find(snap => snap.id === character_version_id)
     : undefined;
   const effectivePersona = snapshot?.persona_override ?? characterExt?.persona ?? "";
   const effectiveSpeechStyle = snapshot?.speech_style_override ?? characterExt?.speech_style;
 
-  if (character) parts.push(`## キャラクター: ${character.canonical_name}\n${character.description}`);
-  if (effectivePersona) parts.push(`## キャラクター設定\n${effectivePersona}`);
-  if (effectiveSpeechStyle) parts.push(`話し方: ${effectiveSpeechStyle}`);
+  if (character) parts.push(`${s.rag_char_section(character.canonical_name)}\n${character.description}`);
+  if (effectivePersona) parts.push(`${s.rag_char_setting}\n${effectivePersona}`);
+  if (effectiveSpeechStyle) parts.push(`${s.rag_speech_style}${effectiveSpeechStyle}`);
 
   // Story context — tiered: recent 3 get full detail, top-3 relevant get ultra summary
   const charChapters = allChapters.filter(c => c.appearing_characters.includes(character_id));
@@ -249,11 +272,11 @@ export async function buildContext(
     .filter(c => !recentThree.includes(c))
     .map(c => ({
       c,
-      s: keywordScore(queryTokens, [c.summary_short, c.summary_ultra, c.key_events.join(" ")].join(" ")),
+      sc: keywordScore(queryTokens, [c.summary_short, c.summary_ultra, c.key_events.join(" ")].join(" ")),
     }))
-    .sort((a, b) => b.s - a.s)
+    .sort((a, b) => b.sc - a.sc)
     .slice(0, 3)
-    .filter(x => x.s > 0)
+    .filter(x => x.sc > 0)
     .map(x => x.c);
 
   const chaptersToShow = [...topRelevant, ...recentThree]
@@ -272,20 +295,20 @@ export async function buildContext(
       }
       return lines.join("\n");
     });
-    parts.push(`## 関連する出来事\n${storyLines.join("\n\n")}`);
+    parts.push(`${s.rag_related_events}\n${storyLines.join("\n\n")}`);
   }
 
   // Related entities (exclude the character itself)
   const filteredEntities = relatedEntities.filter(e => e.id !== character_id);
   if (filteredEntities.length > 0) {
-    parts.push("## 関連人物・概念\n" + filteredEntities.map(e =>
+    parts.push(`${s.rag_related_entities}\n` + filteredEntities.map(e =>
       `- ${e.canonical_name}: ${e.description}`
     ).join("\n"));
   }
 
   // Text chunks (most valuable — keep all top_k)
   if (chunks.length > 0) {
-    parts.push("## 関連本文\n" + chunks.map(r => r.chunk.text).join("\n\n---\n\n"));
+    parts.push(`${s.rag_related_text}\n` + chunks.map(r => r.chunk.text).join("\n\n---\n\n"));
   }
 
   return parts.join("\n\n");

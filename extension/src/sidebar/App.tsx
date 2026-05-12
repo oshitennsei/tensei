@@ -64,6 +64,7 @@ function ExpandButton() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   if (!isSidePanel) return null;
+  if (typeof chrome === 'undefined' || !chrome.windows) return null;
   const open = () => chrome.windows.create({
     url: chrome.runtime.getURL("src/sidebar/index.html"),
     type: "popup",
@@ -99,6 +100,7 @@ function AppContent() {
           onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
           onWorkDeleted={() => setScreen({ name: "home" })}
           onPerformance={() => setScreen({ name: "performance-setup", work: screen.work })}
+          onResumePerformance={session => setScreen({ name: "performance", work: screen.work, session })}
         />
       );
     }
@@ -131,7 +133,7 @@ function AppContent() {
           session={screen.session}
           plan={screen.plan}
           onBack={() => setScreen({ name: "scene-brief", work: screen.work, session: screen.session })}
-          onStart={() => setScreen({ name: "performance", work: screen.work, session: screen.session })}
+          onStart={_plan => setScreen({ name: "performance", work: screen.work, session: screen.session })}
         />
       );
     }

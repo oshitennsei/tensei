@@ -5,27 +5,29 @@ import {
   getRoleAssignments, setRoleAssignment,
   LlmClient, LlmError,
 } from "@/lib/llm";
-import type { LlmModel, LlmRole } from "@/lib/storage";
+import type { LlmModel, LlmRole, Language } from "@/lib/storage";
 import {
   getGlobalBackgroundState, setGlobalBackground, setGlobalBackgroundValue,
   clearGlobalBackground, GRADIENT_PRESETS, DEFAULT_BG,
 } from "@/lib/background";
 import { useBackground } from "../context/BackgroundContext";
 import { db } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 function AboutSection() {
+  const str = useStrings();
   const [open, setOpen] = useState(false);
   return (
     <section className="border-t border-gray-100 pt-4">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase">このアプリについて</h3>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase">{str.settings_about_section}</h3>
         <div className="flex items-center gap-3">
           <span className="font-mono text-xs text-gray-700">{__APP_VERSION__}</span>
           <button
             className="text-xs text-indigo-500 hover:underline"
             onClick={() => setOpen(v => !v)}
           >
-            {open ? "閉じる" : "詳細"}
+            {open ? str.settings_about_hide : str.settings_about_show}
           </button>
         </div>
       </div>
@@ -33,16 +35,16 @@ function AboutSection() {
         <div className="mt-2 space-y-3">
           <div className="space-y-1 text-xs text-gray-500">
             <div className="flex justify-between">
-              <span>ライセンス</span>
+              <span>{str.settings_license}</span>
               <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">GNU GPL v3.0</a>
             </div>
             <div className="flex justify-between">
-              <span>ソースコード</span>
+              <span>{str.settings_source}</span>
               <a href="https://github.com/Chakotay-Lee/tensei" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">GitHub</a>
             </div>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-1.5">使用ライブラリ</p>
+            <p className="text-xs text-gray-400 mb-1.5">{str.settings_libs}</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-400">
               <span>React 18</span><span className="text-right">MIT</span>
               <span>Dexie.js</span><span className="text-right">Apache 2.0</span>
@@ -64,23 +66,12 @@ interface Props {
   onPersona: () => void;
 }
 
-const ROLES: LlmRole[] = ["main", "sub_agent", "compression", "embedding"];
-const ROLE_LABELS: Record<LlmRole, string> = {
-  main:        "対話 (main)",
-  sub_agent:   "サブエージェント",
-  compression: "圧縮",
-  embedding:   "埋め込み",
-};
-const ROLE_DESCRIPTIONS: Record<LlmRole, string> = {
-  main:        "キャラクターとの会話",
-  sub_agent:   "章解析・人物同定・キーワード抽出",
-  compression: "長期記憶の圧縮",
-  embedding:   "RAG用ベクトル化",
-};
+const ROLES: LlmRole[] = ["main", "sub_agent", "plan", "scene", "compression", "embedding"];
 
 const PRESET_ENDPOINTS = [
   { label: "OpenAI",   url: "https://api.openai.com/v1" },
   { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
+  { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta" },
   { label: "Ollama",   url: "http://localhost:11434/v1" },
   { label: "ローカル (Transformers.js)", url: "local://transformers" },
 ];
@@ -98,9 +89,17 @@ const BLANK_FORM: Omit<LlmModel, "id"> = {
   context_window: undefined,
 };
 
+const UI_LANG_NAMES: Partial<Record<Language, string>> = {
+  "ja":    "日本語",
+  "zh-tw": "繁體中文",
+  "zh-cn": "简体中文",
+  "en":    "English",
+};
+
 type TestState = "idle" | "testing" | "ok" | "fail";
 
 export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
+  const str = useStrings();
   const { loadBackground } = useBackground();
   const [models, setModels] = useState<LlmModel[]>([]);
   const [assignments, setAssignments] = useState<Partial<Record<LlmRole, string>>>({});
@@ -116,6 +115,24 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
   const [testMsg, setTestMsg] = useState("");
   const [planMaxLoops, setPlanMaxLoops] = useState(3);
   const [planDebugMode, setPlanDebugMode] = useState(false);
+  const [uiLanguage, setUiLanguage] = useState<Language>("ja");
+
+  const ROLE_LABELS: Record<LlmRole, string> = {
+    main:        str.settings_role_main,
+    sub_agent:   str.settings_role_sub,
+    plan:        str.settings_role_plan,
+    scene:       str.settings_role_scene,
+    compression: str.settings_role_compress,
+    embedding:   str.settings_role_embed,
+  };
+  const ROLE_DESCRIPTIONS: Record<LlmRole, string> = {
+    main:        str.settings_role_main_desc,
+    sub_agent:   str.settings_role_sub_desc,
+    plan:        str.settings_role_plan_desc,
+    scene:       str.settings_role_scene_desc,
+    compression: str.settings_role_compress_desc,
+    embedding:   str.settings_role_embed_desc,
+  };
 
   const reload = async () => {
     const [ms, as, appSettings] = await Promise.all([listModels(), getRoleAssignments(), db.app_settings.get("global")]);
@@ -124,6 +141,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
     if (appSettings) {
       setPlanMaxLoops(appSettings.plan_max_loops ?? 3);
       setPlanDebugMode(appSettings.plan_debug_mode ?? false);
+      setUiLanguage(appSettings.ui_language ?? "ja");
     }
   };
   useEffect(() => {
@@ -137,6 +155,15 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
       await db.app_settings.update("global", { plan_max_loops: maxLoops, plan_debug_mode: debugMode });
     } else {
       await db.app_settings.add({ id: "global", plan_max_loops: maxLoops, plan_debug_mode: debugMode });
+    }
+  };
+
+  const saveUILanguage = async (lang: Language) => {
+    const existing = await db.app_settings.get("global");
+    if (existing) {
+      await db.app_settings.update("global", { ui_language: lang });
+    } else {
+      await db.app_settings.add({ id: "global", ui_language: lang });
     }
   };
 
@@ -196,7 +223,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
 
   const handleTest = async () => {
     if (!form.endpoint_url || !form.model_name) {
-      setError("エンドポイントとモデル名を入力してください。");
+      setError(str.settings_error_endpoint);
       return;
     }
     setTestState("testing");
@@ -206,7 +233,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
     try {
       await client.complete([{ role: "user", content: "Reply with the single word: ok" }]);
       setTestState("ok");
-      setTestMsg("接続成功");
+      setTestMsg(str.settings_test_ok);
     } catch (e) {
       setTestState("fail");
       setTestMsg(e instanceof LlmError ? e.userMessage : String(e));
@@ -215,7 +242,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
 
   const handleSave = async () => {
     if (!form.endpoint_url || !form.model_name) {
-      setError("エンドポイントとモデル名を入力してください。");
+      setError(str.settings_error_endpoint);
       return;
     }
     setSaving(true);
@@ -255,8 +282,8 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
-        <Button variant="ghost" size="sm" onClick={onBack}>← 戻る</Button>
-        <h2 className="text-sm font-semibold">設定</h2>
+        <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
+        <h2 className="text-sm font-semibold">{str.settings_title}</h2>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -264,14 +291,14 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
         {/* ── Model registry ── */}
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase">登録済みモデル</h3>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase">{str.settings_models_section}</h3>
             {!showForm && (
-              <Button variant="ghost" size="sm" onClick={startAdd}>＋ 追加</Button>
+              <Button variant="ghost" size="sm" onClick={startAdd}>{str.settings_add_model}</Button>
             )}
           </div>
 
           {models.length === 0 && !showForm && (
-            <p className="text-xs text-gray-400">モデルが登録されていません。</p>
+            <p className="text-xs text-gray-400">{str.settings_no_models}</p>
           )}
 
           {models.length > 0 && (
@@ -293,9 +320,9 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                   </div>
                   <div className="flex gap-1 ml-2 shrink-0">
                     <Button variant="ghost" size="sm" onClick={() => editingId === m.id ? cancelForm() : startEdit(m)}>
-                      {editingId === m.id ? "キャンセル" : "編集"}
+                      {editingId === m.id ? str.settings_cancel : str.settings_edit}
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => handleDelete(m.id)}>削除</Button>
+                    <Button variant="danger" size="sm" onClick={() => handleDelete(m.id)}>{str.settings_delete}</Button>
                   </div>
                 </li>
               ))}
@@ -305,20 +332,20 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
           {/* Add / Edit form */}
           {showForm && (
             <div className="border border-gray-200 rounded p-3 space-y-3">
-              <p className="text-xs font-medium text-gray-600">{editingId ? "モデルを編集" : "新規モデルを追加"}</p>
+              <p className="text-xs font-medium text-gray-600">{editingId ? str.settings_form_edit_title : str.settings_form_new_title}</p>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">名前（任意）</label>
+                <label className="block text-xs text-gray-500 mb-1">{str.settings_field_name}</label>
                 <input
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                  placeholder="例: GPT-4o"
+                  placeholder={str.settings_field_name_ph}
                   value={form.name}
                   onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setTestState("idle"); }}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">エンドポイント</label>
+                <label className="block text-xs text-gray-500 mb-1">{str.settings_field_endpoint}</label>
                 <div className="flex gap-1 mb-1 flex-wrap">
                   {PRESET_ENDPOINTS.map(p => (
                     <Button key={p.url} variant="ghost" size="sm"
@@ -333,15 +360,13 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                   onChange={e => { setForm(f => ({ ...f, endpoint_url: e.target.value })); setTestState("idle"); }}
                 />
                 {form.endpoint_url.startsWith("local://") && (
-                  <p className="text-xs text-indigo-600 mt-1">
-                    ブラウザ内でモデルを実行。初回使用時にモデルファイルをダウンロード（約60〜100 MB）。APIキー不要。
-                  </p>
+                  <p className="text-xs text-indigo-600 mt-1">{str.settings_local_note}</p>
                 )}
               </div>
 
               {!form.endpoint_url.startsWith("local://") && (
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">APIキー</label>
+                  <label className="block text-xs text-gray-500 mb-1">{str.settings_field_apikey}</label>
                   <input
                     type="password"
                     autoComplete="off"
@@ -354,7 +379,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
               )}
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">モデル名</label>
+                <label className="block text-xs text-gray-500 mb-1">{str.settings_field_model}</label>
                 {form.endpoint_url.startsWith("local://") && (
                   <div className="flex gap-1 mb-1 flex-wrap">
                     {LOCAL_EMBED_MODELS.map(m => (
@@ -374,7 +399,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">コンテキストウィンドウ（任意）</label>
+                <label className="block text-xs text-gray-500 mb-1">{str.settings_field_context}</label>
                 <input
                   type="number"
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
@@ -385,16 +410,16 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                     setForm(f => ({ ...f, context_window: isNaN(v) ? undefined : v }));
                   }}
                 />
-                <p className="text-xs text-gray-400 mt-0.5">長章節の分割解析に使用。空白の場合はデフォルト（10,000トークン）。</p>
+                <p className="text-xs text-gray-400 mt-0.5">{str.settings_context_note}</p>
               </div>
 
               {testState !== "idle" && (
                 <p className={`text-xs px-2 py-1.5 rounded ${
-                  testState === "ok"      ? "bg-green-50 text-green-700" :
-                  testState === "fail"    ? "bg-red-50 text-red-700" :
-                                            "bg-gray-50 text-gray-500"
+                  testState === "ok"   ? "bg-green-50 text-green-700" :
+                  testState === "fail" ? "bg-red-50 text-red-700" :
+                                         "bg-gray-50 text-gray-500"
                 }`}>
-                  {testState === "testing" ? "接続中..." : testMsg}
+                  {testState === "testing" ? str.settings_testing : testMsg}
                 </p>
               )}
 
@@ -404,12 +429,12 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                 {!form.endpoint_url.startsWith("local://") && (
                   <Button variant="ghost" size="sm" onClick={handleTest}
                     disabled={testState === "testing" || saving} className="flex-1">
-                    接続テスト
+                    {str.settings_test_btn}
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" onClick={cancelForm} className="flex-1">キャンセル</Button>
+                <Button variant="ghost" size="sm" onClick={cancelForm} className="flex-1">{str.settings_cancel}</Button>
                 <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
-                  {saving ? "保存中..." : editingId ? "更新" : "保存"}
+                  {saving ? str.settings_saving : editingId ? str.settings_update : str.settings_save}
                 </Button>
               </div>
             </div>
@@ -418,9 +443,9 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
 
         {/* ── Role assignments ── */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">ロール割り当て</h3>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.settings_roles_section}</h3>
           {models.length === 0 ? (
-            <p className="text-xs text-gray-400">先にモデルを登録してください。</p>
+            <p className="text-xs text-gray-400">{str.settings_no_models_roles}</p>
           ) : (
             <div className="space-y-2">
               {ROLES.map(role => (
@@ -434,7 +459,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                     value={assignments[role] ?? ""}
                     onChange={e => handleRoleChange(role, e.target.value)}
                   >
-                    <option value="">— 未設定 —</option>
+                    <option value="">{str.settings_unassigned}</option>
                     {models.map(m => (
                       <option key={m.id} value={m.id}>{m.name || m.model_name}</option>
                     ))}
@@ -447,37 +472,32 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
 
         {/* ── Appearance ── */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">外観</h3>
-          <p className="text-xs text-gray-400 mb-2">全作品共通の背景（作品ごとに上書き可能）</p>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.settings_appearance}</h3>
+          <p className="text-xs text-gray-400 mb-2">{str.settings_appearance_desc}</p>
           <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={handleGlobalBgUpload} />
 
-          {/* Current preview */}
           <div
             className="w-full h-14 rounded mb-2 flex items-center justify-center relative overflow-hidden"
             style={{ background: globalBgState.image ? `url(${globalBgState.image}) center/cover no-repeat` : (globalBgState.value ?? DEFAULT_BG) }}
           >
             {!globalBgState.image && !globalBgState.value && (
-              <span className="text-white/60 text-xs">デフォルト（深夜の書斎）</span>
+              <span className="text-white/60 text-xs">{str.settings_bg_default_label}</span>
             )}
             {(globalBgState.image || globalBgState.value) && (
               <button
                 className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 text-xs leading-none"
                 onClick={handleClearGlobalBg}
-                title="リセット（デフォルトに戻す）"
               >×</button>
             )}
           </div>
 
-          {/* Options */}
           <div className="space-y-2">
-            {/* Image upload */}
             <Button variant="ghost" size="sm" className="w-full" onClick={() => bgFileRef.current?.click()}>
-              {globalBgState.image ? "画像を変更" : "+ 画像をアップロード"}
+              {globalBgState.image ? str.settings_bg_change : str.settings_bg_upload}
             </Button>
 
-            {/* Gradient presets */}
             <div>
-              <p className="text-xs text-gray-400 mb-1">グラデーション</p>
+              <p className="text-xs text-gray-400 mb-1">{str.settings_bg_gradient}</p>
               <div className="grid grid-cols-2 gap-1">
                 {GRADIENT_PRESETS.map(p => (
                   <button
@@ -494,9 +514,8 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
               </div>
             </div>
 
-            {/* Solid color */}
             <div className="flex items-center gap-2">
-              <p className="text-xs text-gray-400 shrink-0">単色</p>
+              <p className="text-xs text-gray-400 shrink-0">{str.settings_bg_solid}</p>
               <input
                 type="color"
                 className="w-8 h-6 rounded cursor-pointer border border-gray-300"
@@ -504,7 +523,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                 onChange={e => setBgColorInput(e.target.value)}
               />
               <Button variant="ghost" size="sm" onClick={() => handleGlobalBgValue(bgColorInput)}>
-                適用
+                {str.settings_bg_apply}
               </Button>
             </div>
           </div>
@@ -512,28 +531,52 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
 
         {/* ── Reader persona ── */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">読者設定</h3>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.settings_persona_section}</h3>
           <Button variant="ghost" className="w-full text-left" onClick={onPersona}>
-            読者プロフィール・言語設定 →
+            {str.settings_persona_link}
           </Button>
         </section>
 
         {/* ── Data management ── */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">データ管理</h3>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.settings_data_section}</h3>
           <Button variant="ghost" className="w-full text-left" onClick={onDebug}>
-            解析データを確認 →
+            {str.settings_data_link}
           </Button>
+        </section>
+
+        {/* ── Language ── */}
+        <section>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.settings_lang_label}</h3>
+          <div className="flex gap-2 flex-wrap">
+            {(["ja", "zh-tw", "zh-cn", "en"] as Language[]).map(lang => (
+              <button
+                key={lang}
+                className={`px-4 py-1.5 text-sm rounded border transition-colors ${
+                  uiLanguage === lang
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "border-gray-300 text-gray-700 hover:border-indigo-400"
+                }`}
+                onClick={() => {
+                  setUiLanguage(lang);
+                  saveUILanguage(lang);
+                }}
+              >
+                {UI_LANG_NAMES[lang] ?? lang}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">{str.settings_lang_desc}</p>
         </section>
 
         {/* ── Production plan settings ── */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">演出計画・調査設定</h3>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">{str.settings_plan_section}</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-700">調査ループ数</p>
-                <p className="text-xs text-gray-400">多いほど詳細な計画（デフォルト: 3）</p>
+                <p className="text-sm text-gray-700">{str.settings_plan_loops}</p>
+                <p className="text-xs text-gray-400">{str.settings_plan_loops_desc}</p>
               </div>
               <input
                 type="number"
@@ -550,8 +593,8 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-700">デバッグモード</p>
-                <p className="text-xs text-gray-400">調査ログを演出計画に保存する</p>
+                <p className="text-sm text-gray-700">{str.settings_plan_debug}</p>
+                <p className="text-xs text-gray-400">{str.settings_plan_debug_desc}</p>
               </div>
               <button
                 className={`w-10 h-6 rounded-full transition-colors ${planDebugMode ? "bg-indigo-600" : "bg-gray-300"}`}

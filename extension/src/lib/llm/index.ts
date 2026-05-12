@@ -27,7 +27,10 @@ export interface StreamChunk {
 }
 
 export class LlmClient {
-  constructor(private model: LlmModel) {}
+  constructor(private model: LlmModel) {
+    // Normalize endpoint URL: strip trailing slash to prevent double-slash in paths
+    this.model = { ...model, endpoint_url: model.endpoint_url.replace(/\/+$/, "") };
+  }
 
   static async forRole(role: LlmRole): Promise<LlmClient | null> {
     const model = await getModelForRole(role);

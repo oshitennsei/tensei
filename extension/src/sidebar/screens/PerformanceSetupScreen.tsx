@@ -3,6 +3,7 @@ import { Button } from "../components/Button";
 import { createPerformanceSession } from "@/lib/performance";
 import { db } from "@/lib/storage";
 import type { Work, Entity, PerformanceSession, PerformanceMode, ImprovSetting } from "@/lib/storage";
+import { useStrings } from "@/lib/i18n";
 
 interface Props {
   work: Work;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacters }: Props) {
+  const str = useStrings();
   const [characters, setCharacters] = useState<Entity[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [maxChapter, setMaxChapter] = useState<number>(1);
@@ -66,34 +68,34 @@ export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacte
   };
 
   const modes: Array<{ value: PerformanceMode; label: string; description: string }> = [
-    { value: "director", label: "監督", description: "あなたが演出を指示" },
-    { value: "screenwriter", label: "脚本家", description: "場面の方向性を指示" },
-    { value: "cast", label: "キャスト", description: "あなたも登場人物として参加" },
-    { value: "hybrid", label: "ハイブリッド", description: "全て担当" },
+    { value: "director",     label: str.perf_mode_director,     description: str.perf_mode_director_desc },
+    { value: "screenwriter", label: str.perf_mode_screenwriter, description: str.perf_mode_screenwriter_desc },
+    { value: "cast",         label: str.perf_mode_cast,         description: str.perf_mode_cast_desc },
+    { value: "hybrid",       label: str.perf_mode_hybrid,       description: str.perf_mode_hybrid_desc },
   ];
 
   const improvOptions: Array<{ value: ImprovSetting; label: string; description: string }> = [
-    { value: "strict", label: "厳密", description: "原作に忠実" },
-    { value: "moderate", label: "標準", description: "バランス" },
-    { value: "free", label: "自由", description: "自由な展開" },
+    { value: "strict",   label: str.perf_improv_strict,   description: str.perf_improv_strict_desc },
+    { value: "moderate", label: str.perf_improv_moderate, description: str.perf_improv_moderate_desc },
+    { value: "free",     label: str.perf_improv_free,     description: str.perf_improv_free_desc },
   ];
 
   return (
     <div className="flex flex-col h-full">
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 shrink-0">
         <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
-        <p className="text-sm font-semibold truncate flex-1">{work.title} — パフォーマンス設定</p>
+        <p className="text-sm font-semibold truncate flex-1">{str.perf_setup_title(work.title)}</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-        {/* キャラクター選択 */}
+        {/* Character selection */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">キャラクター選択</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.perf_char_section}</p>
           {characters.length === 0 ? (
             <div className="space-y-2">
-              <p className="text-sm text-gray-400">キャラクターが登録されていません。</p>
+              <p className="text-sm text-gray-400">{str.perf_no_chars}</p>
               <Button variant="ghost" size="sm" onClick={onManageCharacters}>
-                キャラクターを管理 →
+                {str.perf_manage_chars}
               </Button>
             </div>
           ) : (
@@ -115,9 +117,9 @@ export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacte
           )}
         </section>
 
-        {/* 章cutoff */}
+        {/* Chapter cutoff */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">どの章まで（ネタバレ防止）</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.perf_chapter_section}</p>
           <input
             type="number"
             min={1}
@@ -126,12 +128,12 @@ export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacte
             onChange={e => setCutoffChapter(Math.max(1, Math.min(maxChapter, Number(e.target.value))))}
             className="w-24 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
-          <span className="text-xs text-gray-400 ml-2">/ 第{maxChapter}章</span>
+          <span className="text-xs text-gray-400 ml-2">{str.perf_chapter_of(maxChapter)}</span>
         </section>
 
-        {/* モード */}
+        {/* Mode */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">モード</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.perf_mode_section}</p>
           <div className="grid grid-cols-2 gap-2">
             {modes.map(m => (
               <button
@@ -152,9 +154,9 @@ export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacte
           </div>
         </section>
 
-        {/* 即興度 */}
+        {/* Improv */}
         <section>
-          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">即興度</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.perf_improv_section}</p>
           <div className="flex gap-2">
             {improvOptions.map(opt => (
               <button
@@ -182,7 +184,7 @@ export function PerformanceSetupScreen({ work, onBack, onStart, onManageCharacte
           disabled={selectedIds.size === 0 || starting}
           onClick={handleStart}
         >
-          {starting ? "開始中..." : "開始"}
+          {starting ? str.perf_starting : str.perf_start}
         </Button>
       </div>
     </div>
