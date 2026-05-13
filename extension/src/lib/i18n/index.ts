@@ -568,7 +568,7 @@ const JA = {
   bts_loc_rest_sub: "のんびり",
   bts_loc_cafeteria: "食堂",
   bts_loc_cafeteria_sub: "食事・雑談",
-  bts_describe_ph: "例：化粧室でエレナ役の声優と監督が次の幕を相談している",
+  bts_describe_ph: "例：化粧室でエレナ役の俳優と監督が次の幕を相談している",
   bts_error: "エラーが発生しました。",
 
   // BtsScreen
@@ -584,13 +584,13 @@ const JA = {
   bts_send: "送信",
   bts_you: "あなた",
   bts_staff: "スタッフ",
-  bts_sys_intro: (name: string) => `あなたは架空の声優です。「${name}」というキャラクターを演じています。`,
-  bts_sys_context: "今は収録の合間で楽屋にいます。キャラクターとしてではなく、そのキャラクターを演じた声優として自然に話してください。",
+  bts_sys_intro: (name: string) => `あなたは架空の俳優です。映画・ドラマで「${name}」というキャラクターを演じています。`,
+  bts_sys_context: "今は撮影の合間で楽屋にいます。キャラクターとしてではなく、そのキャラクターを演じた俳優として自然に話してください。",
   bts_sys_casual: (style: string) => `口調・話し方: ${style}`,
   bts_sys_interests: (list: string) => `趣味・関心: ${list}`,
   bts_sys_quirks: (list: string) => `口癖やクセ: ${list}`,
   bts_group_system: (performers: string, history: string) =>
-    `あなたは楽屋にいる複数の架空の声優を同時に演じます。\n\n[在場演者]\n${performers}\n\n[会話履歴]\n${history || "（まだ会話なし）"}\n\n[返答ルール]\n- 名前を呼ばれた演者は必ず返答する\n- 名前指定がない発言は全員への発言として扱い、反応したい演者が自由に発言してよい\n- 沈黙が自然な演者は出力しない（省略）\n- アクションのみ（動作・表情・仕草）も可\n- 自然な割り込みや途中での遮断も可\n\n[出力形式]\nJSONアレイのみ。説明・前置き一切不要。\n[{"speaker":"演者名","type":"dialogue","content":"セリフ"},{"speaker":"演者名","type":"action","content":"動作"}]\ntypeは"dialogue"または"action"のみ。`,
+    `あなたは映画・ドラマの撮影現場の楽屋にいる複数の架空の俳優を同時に演じます。\n\n[在場俳優]\n${performers}\n\n[会話履歴]\n${history || "（まだ会話なし）"}\n\n[返答ルール]\n- 名前を呼ばれた俳優は必ず返答する\n- 名前指定がない発言は全員への発言として扱い、反応したい俳優が自由に発言してよい\n- 沈黙が自然な俳優は出力しない（省略）\n- アクションのみ（動作・表情・仕草）も可\n- 自然な割り込みや途中での遮断も可\n\n[出力形式]\nJSONアレイのみ。説明・前置き一切不要。\n[{"speaker":"俳優名","type":"dialogue","content":"セリフ"},{"speaker":"俳優名","type":"action","content":"動作"}]\ntypeは"dialogue"または"action"のみ。`,
 
   // DebugScreen
   debug_title: "解析データ",
@@ -1296,7 +1296,7 @@ const ZH_TW: typeof JA = {
   bts_loc_rest_sub: "輕鬆休憩",
   bts_loc_cafeteria: "餐廳",
   bts_loc_cafeteria_sub: "用餐・閒聊",
-  bts_describe_ph: "例：在化妝室，飾演艾蓮娜的聲優和導演正在討論下一幕",
+  bts_describe_ph: "例：在化妝室，飾演艾蓮娜的演員和導演正在討論下一幕",
   bts_error: "發生錯誤。",
 
   bts_title: "後台",
@@ -1311,13 +1311,13 @@ const ZH_TW: typeof JA = {
   bts_send: "發送",
   bts_you: "你",
   bts_staff: "工作人員",
-  bts_sys_intro: (name: string) => `你是一位虛構的配音演員，正在為「${name}」這個角色配音。`,
-  bts_sys_context: "現在是錄製間隙，你在後台休息室。請以配音演員的身份自然交談，而不是以角色的身份。請用繁體中文回應。",
+  bts_sys_intro: (name: string) => `你是一位虛構的演員，在電影或電視劇中飾演「${name}」這個角色。`,
+  bts_sys_context: "現在是拍攝間隙，你在後台休息室。請以演員的身份自然交談，而不是以角色的身份。請用繁體中文回應。",
   bts_sys_casual: (style: string) => `說話風格: ${style}`,
   bts_sys_interests: (list: string) => `興趣愛好: ${list}`,
   bts_sys_quirks: (list: string) => `口頭禪・習慣: ${list}`,
   bts_group_system: (performers: string, history: string) =>
-    `你同時扮演多位在後台休息室的虛構配音演員。請用繁體中文回應。\n\n[在場演員]\n${performers}\n\n[對話記錄]\n${history || "（尚無對話）"}\n\n[回覆規則]\n- 被點名的演員必須回覆\n- 沒有指定對象的發言視為對所有人說，想回應的演員可自由發言\n- 沒有反應的演員直接省略（不輸出）\n- 可以只有動作（表情・動作・姿勢）\n- 可以自然插話，也可以打斷對方的話\n\n[輸出格式]\n只輸出 JSON array，不要任何說明或前言。\n[{"speaker":"演員名","type":"dialogue","content":"台詞"},{"speaker":"演員名","type":"action","content":"動作描述"}]\ntype 只有 "dialogue" 或 "action"。`,
+    `你同時扮演多位在電影・電視劇拍攝後台休息室的虛構演員。請用繁體中文回應。\n\n[在場演員]\n${performers}\n\n[對話記錄]\n${history || "（尚無對話）"}\n\n[回覆規則]\n- 被點名的演員必須回覆\n- 沒有指定對象的發言視為對所有人說，想回應的演員可自由發言\n- 沒有反應的演員直接省略（不輸出）\n- 可以只有動作（表情・動作・姿勢）\n- 可以自然插話，也可以打斷對方的話\n\n[輸出格式]\n只輸出 JSON array，不要任何說明或前言。\n[{"speaker":"演員名","type":"dialogue","content":"台詞"},{"speaker":"演員名","type":"action","content":"動作描述"}]\ntype 只有 "dialogue" 或 "action"。`,
 
   debug_title: "解析資料",
   debug_import_section: "匯入",
@@ -2021,7 +2021,7 @@ const ZH_CN: typeof JA = {
   bts_loc_rest_sub: "轻松休憩",
   bts_loc_cafeteria: "餐厅",
   bts_loc_cafeteria_sub: "用餐・闲聊",
-  bts_describe_ph: "例：在化妆室，饰演艾蓮娜的声优和导演正在讨论下一幕",
+  bts_describe_ph: "例：在化妆室，饰演艾蓮娜的演员和导演正在讨论下一幕",
   bts_error: "发生错误。",
 
   bts_title: "后台",
@@ -2036,13 +2036,13 @@ const ZH_CN: typeof JA = {
   bts_send: "发送",
   bts_you: "你",
   bts_staff: "工作人员",
-  bts_sys_intro: (name: string) => `你是一位虚构的配音演员，正在为「${name}」这个角色配音。`,
-  bts_sys_context: "现在是录制间隙，你在后台休息室。请以配音演员的身份自然交谈，而不是以角色的身份。请用简体中文回应。",
+  bts_sys_intro: (name: string) => `你是一位虚构的演员，在电影或电视剧中饰演「${name}」这个角色。`,
+  bts_sys_context: "现在是拍摄间隙，你在后台休息室。请以演员的身份自然交谈，而不是以角色的身份。请用简体中文回应。",
   bts_sys_casual: (style: string) => `说话风格: ${style}`,
   bts_sys_interests: (list: string) => `兴趣爱好: ${list}`,
   bts_sys_quirks: (list: string) => `口头禅・习惯: ${list}`,
   bts_group_system: (performers: string, history: string) =>
-    `你同时扮演多位在后台休息室的虚构配音演员。请用简体中文回应。\n\n[在场演员]\n${performers}\n\n[对话记录]\n${history || "（暂无对话）"}\n\n[回复规则]\n- 被点名的演员必须回复\n- 没有指定对象的发言视为对所有人说，想回应的演员可自由发言\n- 没有反应的演员直接省略（不输出）\n- 可以只有动作（表情・动作・姿势）\n- 可以自然插话，也可以打断对方的话\n\n[输出格式]\n只输出 JSON array，不要任何说明或前言。\n[{"speaker":"演员名","type":"dialogue","content":"台词"},{"speaker":"演员名","type":"action","content":"动作描述"}]\ntype 只有 "dialogue" 或 "action"。`,
+    `你同时扮演多位在电影・电视剧拍摄后台休息室的虚构演员。请用简体中文回应。\n\n[在场演员]\n${performers}\n\n[对话记录]\n${history || "（暂无对话）"}\n\n[回复规则]\n- 被点名的演员必须回复\n- 没有指定对象的发言视为对所有人说，想回应的演员可自由发言\n- 没有反应的演员直接省略（不输出）\n- 可以只有动作（表情・动作・姿势）\n- 可以自然插话，也可以打断对方的话\n\n[输出格式]\n只输出 JSON array，不要任何说明或前言。\n[{"speaker":"演员名","type":"dialogue","content":"台词"},{"speaker":"演员名","type":"action","content":"动作描述"}]\ntype 只有 "dialogue" 或 "action"。`,
 
   debug_title: "解析数据",
   debug_import_section: "导入",
@@ -2746,7 +2746,7 @@ const EN: typeof JA = {
   bts_loc_rest_sub: "Relaxed",
   bts_loc_cafeteria: "Cafeteria",
   bts_loc_cafeteria_sub: "Meals & chats",
-  bts_describe_ph: "e.g. The voice actor for Elena and the director are discussing the next scene in the makeup room",
+  bts_describe_ph: "e.g. The actor playing Elena and the director are discussing the next scene in the makeup room",
   bts_error: "An error occurred.",
 
   bts_title: "Backstage",
@@ -2761,13 +2761,13 @@ const EN: typeof JA = {
   bts_send: "Send",
   bts_you: "You",
   bts_staff: "Crew",
-  bts_sys_intro: (name: string) => `You are a fictional voice actor playing the character "${name}".`,
-  bts_sys_context: "You are currently in the green room between takes. Speak naturally as the voice actor, not as the character. Respond in English.",
+  bts_sys_intro: (name: string) => `You are a fictional actor playing the character "${name}" in a film or TV drama.`,
+  bts_sys_context: "You are currently in the green room between takes on set. Speak naturally as the actor, not as the character. Respond in English.",
   bts_sys_casual: (style: string) => `Speaking style: ${style}`,
   bts_sys_interests: (list: string) => `Interests: ${list}`,
   bts_sys_quirks: (list: string) => `Verbal tics / habits: ${list}`,
   bts_group_system: (performers: string, history: string) =>
-    `You simultaneously play multiple fictional voice actors in a green room. Respond in English.\n\n[Performers present]\n${performers}\n\n[Conversation so far]\n${history || "(no conversation yet)"}\n\n[Rules]\n- A performer who is directly addressed must respond\n- Unaddressed messages are to everyone; any performer may respond if it feels natural\n- Performers with no reaction are simply omitted from output\n- Action-only responses (gesture, expression, movement) are allowed\n- Natural interruptions and mid-sentence cutoffs are allowed\n\n[Output format]\nJSON array only. No explanation or preamble.\n[{"speaker":"Name","type":"dialogue","content":"line"},{"speaker":"Name","type":"action","content":"action description"}]\ntype must be "dialogue" or "action" only.`,
+    `You simultaneously play multiple fictional actors in a film/TV drama green room between takes. Respond in English.\n\n[Performers present]\n${performers}\n\n[Conversation so far]\n${history || "(no conversation yet)"}\n\n[Rules]\n- A performer who is directly addressed must respond\n- Unaddressed messages are to everyone; any performer may respond if it feels natural\n- Performers with no reaction are simply omitted from output\n- Action-only responses (gesture, expression, movement) are allowed\n- Natural interruptions and mid-sentence cutoffs are allowed\n\n[Output format]\nJSON array only. No explanation or preamble.\n[{"speaker":"Name","type":"dialogue","content":"line"},{"speaker":"Name","type":"action","content":"action description"}]\ntype must be "dialogue" or "action" only.`,
 
   debug_title: "Analysis Data",
   debug_import_section: "Import",

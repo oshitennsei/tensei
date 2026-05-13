@@ -64,12 +64,15 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
 
   if (client) {
     const systemPrompt = [
-      "架空の声優プロフィールをJSONで生成してください。",
-      `キャラクター: ${name}`,
-      `説明: ${description}`,
-      speechStyle ? `話し方: ${speechStyle}` : "",
+      "架空の俳優プロフィールをJSONで生成してください。映画・テレビドラマ出身の俳優です。",
+      `担当キャラクター: ${name}`,
+      `キャラクター説明: ${description}`,
+      speechStyle ? `キャラクターの話し方: ${speechStyle}` : "",
       "",
       '必須フィールド: {"archetype":"...","personality_traits":[...],"speech_patterns":[...],"off_set_persona":{"casual_style":"...","quirks":[...],"interests":[]},"signature_style":{"acting_method":"...","strengths":[],"notable_techniques":[]},"contrast_with_role_hints":"..."}',
+      "archetype は俳優としての役柄タイプ（例：個性派、実力派、アイドル系など）。",
+      "off_set_persona はプライベートや撮影現場での素の人格。",
+      "contrast_with_role_hints は担当キャラクターとの性格的な違い。",
       "JSONのみ返却。",
     ].filter(l => l !== undefined).join("\n");
 
@@ -90,9 +93,9 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
   const skill: PerformerSkill = {
     id: character_id,
     source: "ai_generated",
-    name: `${name}役・声優`,
+    name: `${name}役・俳優`,
     background_type: "fictional",
-    archetype: persona.archetype ?? "声優",
+    archetype: persona.archetype ?? "俳優",
     personality_traits: persona.personality_traits ?? [],
     speech_patterns: persona.speech_patterns ?? [],
     off_set_persona: {
@@ -433,7 +436,7 @@ export async function generateCrewInterjection(
     "今の会話の流れ:",
     lastExchange,
     "",
-    "場の雰囲気に合う短い一言を言ってください。1〜2文。キャラクター名や「声優」という言葉は使わないこと。",
+    "場の雰囲気に合う短い一言を言ってください。1〜2文。キャラクター名・役者名・「俳優」「声優」という言葉は使わないこと。",
   ].join("\n");
 
   const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
