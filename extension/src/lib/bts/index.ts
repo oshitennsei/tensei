@@ -1,7 +1,23 @@
 import { LlmClient, LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
-import type { BtsCrewMember, BtsLocation, BtsSession, BtsTurn, PerformerSkill, PerformanceSession } from "@/lib/storage";
+import type { BtsCrewMember, BtsLocation, BtsSession, BtsTurn, Entity, PerformerSkill, PerformanceSession } from "@/lib/storage";
 import { getStrings, langFromStorage } from "@/lib/i18n";
+
+export interface BtsGroupTurn {
+  speaker_skill_id: string;
+  speaker_name: string;
+  turn_type: "dialogue" | "action";
+  content: string;
+}
+
+export type BtsStreamChunk =
+  | { event: "turn_done"; turn: BtsGroupTurn }
+  | { event: "all_done" };
+
+export interface SkillWithEntity {
+  skill: PerformerSkill;
+  entity: Entity;
+}
 
 export interface BtsSetup {
   location: BtsLocation;
@@ -263,6 +279,119 @@ export async function* btsChat(
     // 8. Update last_active
     await db.bts_sessions.update(session.id, { last_active: Date.now() });
   }
+}
+
+// ── Group chat ────────────────────────────────────────────────────────────────
+
+function tryExtractObjects(buffer: string): { turns: BtsGroupTurn[]; remaining: string } {
+  const turns: BtsGroupTurn[] = [];
+  let pos = 0;
+
+  while (pos < buffer.length) {
+    const start = buffer.indexOf("{", pos);
+    if (start === -1) break;
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let i = start;
+
+    for (; i < buffer.length; i++) {
+      const c = buffer[i];
+      if (escape) { escape = false; continue; }
+      if (c === "\\" && inString) { escape = true; continue; }
+      if (c === '"') { inString = !inString; continue; }
+      if (!inString) {
+        if (c === "{") depth++;
+        else if (c === "}") {
+          depth--;
+          if (depth === 0) {
+            try {
+              const raw = JSON.parse(buffer.slice(start, i + 1)) as Record<string, string>;
+              if (raw.speaker && raw.content) {
+                turns.push({
+                  speaker_skill_id: "",
+                  speaker_name: raw.speaker,
+                  turn_type: raw.type === "action" ? "action" : "dialogue",
+                  content: raw.content,
+                });
+              }
+            } catch { /* skip malformed */ }
+            pos = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (depth > 0) return { turns, remaining: buffer.slice(start) };
+  }
+
+  return { turns, remaining: buffer.slice(pos) };
+}
+
+export async function* btsGroupChat(
+  session: BtsSession,
+  presentSkills: SkillWithEntity[],
+  user_message: string,
+  signal?: AbortSignal,
+): AsyncGenerator<BtsStreamChunk> {
+  const appSettings = await db.app_settings.get("global");
+  const s = getStrings(langFromStorage(appSettings?.ui_language));
+
+  const nameToId = new Map<string, string>(
+    presentSkills.map(({ skill, entity }) => [entity.canonical_name, skill.id]),
+  );
+
+  const performerDescs = presentSkills.map(({ skill, entity }) => {
+    const parts: string[] = [entity.canonical_name];
+    if (skill.off_set_persona?.casual_style) parts.push(`${s.bts_sys_casual(skill.off_set_persona.casual_style)}`);
+    if (skill.off_set_persona?.quirks?.length) parts.push(`${s.bts_sys_quirks(skill.off_set_persona.quirks.join("、"))}`);
+    return `- ${parts.join(" / ")}`;
+  }).join("\n");
+
+  const historyText = session.conversation_history.slice(-20).map(turn => {
+    const name = turn.speaker_skill_id === "user"
+      ? s.bts_you
+      : turn.speaker_skill_id === "crew"
+      ? s.bts_staff
+      : (presentSkills.find(x => x.skill.id === turn.speaker_skill_id)?.entity.canonical_name ?? turn.speaker_skill_id);
+    const prefix = turn.turn_type === "action" ? `*${turn.content}*` : turn.content;
+    return `[${name}]: ${prefix}`;
+  }).join("\n");
+
+  const systemContent = s.bts_group_system(performerDescs, historyText);
+
+  const client = await LlmClient.forRole("main");
+  if (!client) throw new LlmError(0, "LLMが設定されていません。");
+
+  let buffer = "";
+
+  try {
+    for await (const chunk of client.stream(
+      [{ role: "system" as const, content: systemContent }, { role: "user" as const, content: user_message }],
+      signal,
+    )) {
+      if (!chunk.delta) continue;
+      buffer += chunk.delta;
+      const { turns, remaining } = tryExtractObjects(buffer);
+      buffer = remaining;
+      for (const turn of turns) {
+        turn.speaker_skill_id = nameToId.get(turn.speaker_name) ?? turn.speaker_name;
+        yield { event: "turn_done", turn };
+      }
+    }
+    // flush remaining
+    const { turns } = tryExtractObjects(buffer);
+    for (const turn of turns) {
+      turn.speaker_skill_id = nameToId.get(turn.speaker_name) ?? turn.speaker_name;
+      yield { event: "turn_done", turn };
+    }
+  } finally {
+    await db.bts_sessions.update(session.id, { last_active: Date.now() });
+  }
+
+  yield { event: "all_done" };
 }
 
 export async function appendBtsTurn(session_id: string, turn: BtsTurn): Promise<void> {

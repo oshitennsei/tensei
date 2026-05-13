@@ -589,6 +589,8 @@ const JA = {
   bts_sys_casual: (style: string) => `口調・話し方: ${style}`,
   bts_sys_interests: (list: string) => `趣味・関心: ${list}`,
   bts_sys_quirks: (list: string) => `口癖やクセ: ${list}`,
+  bts_group_system: (performers: string, history: string) =>
+    `あなたは楽屋にいる複数の架空の声優を同時に演じます。\n\n[在場演者]\n${performers}\n\n[会話履歴]\n${history || "（まだ会話なし）"}\n\n[返答ルール]\n- 名前を呼ばれた演者は必ず返答する\n- 名前指定がない発言は全員への発言として扱い、反応したい演者が自由に発言してよい\n- 沈黙が自然な演者は出力しない（省略）\n- アクションのみ（動作・表情・仕草）も可\n- 自然な割り込みや途中での遮断も可\n\n[出力形式]\nJSONアレイのみ。説明・前置き一切不要。\n[{"speaker":"演者名","type":"dialogue","content":"セリフ"},{"speaker":"演者名","type":"action","content":"動作"}]\ntypeは"dialogue"または"action"のみ。`,
 
   // DebugScreen
   debug_title: "解析データ",
@@ -1314,6 +1316,8 @@ const ZH_TW: typeof JA = {
   bts_sys_casual: (style: string) => `說話風格: ${style}`,
   bts_sys_interests: (list: string) => `興趣愛好: ${list}`,
   bts_sys_quirks: (list: string) => `口頭禪・習慣: ${list}`,
+  bts_group_system: (performers: string, history: string) =>
+    `你同時扮演多位在後台休息室的虛構配音演員。請用繁體中文回應。\n\n[在場演員]\n${performers}\n\n[對話記錄]\n${history || "（尚無對話）"}\n\n[回覆規則]\n- 被點名的演員必須回覆\n- 沒有指定對象的發言視為對所有人說，想回應的演員可自由發言\n- 沒有反應的演員直接省略（不輸出）\n- 可以只有動作（表情・動作・姿勢）\n- 可以自然插話，也可以打斷對方的話\n\n[輸出格式]\n只輸出 JSON array，不要任何說明或前言。\n[{"speaker":"演員名","type":"dialogue","content":"台詞"},{"speaker":"演員名","type":"action","content":"動作描述"}]\ntype 只有 "dialogue" 或 "action"。`,
 
   debug_title: "解析資料",
   debug_import_section: "匯入",
@@ -2037,6 +2041,8 @@ const ZH_CN: typeof JA = {
   bts_sys_casual: (style: string) => `说话风格: ${style}`,
   bts_sys_interests: (list: string) => `兴趣爱好: ${list}`,
   bts_sys_quirks: (list: string) => `口头禅・习惯: ${list}`,
+  bts_group_system: (performers: string, history: string) =>
+    `你同时扮演多位在后台休息室的虚构配音演员。请用简体中文回应。\n\n[在场演员]\n${performers}\n\n[对话记录]\n${history || "（暂无对话）"}\n\n[回复规则]\n- 被点名的演员必须回复\n- 没有指定对象的发言视为对所有人说，想回应的演员可自由发言\n- 没有反应的演员直接省略（不输出）\n- 可以只有动作（表情・动作・姿势）\n- 可以自然插话，也可以打断对方的话\n\n[输出格式]\n只输出 JSON array，不要任何说明或前言。\n[{"speaker":"演员名","type":"dialogue","content":"台词"},{"speaker":"演员名","type":"action","content":"动作描述"}]\ntype 只有 "dialogue" 或 "action"。`,
 
   debug_title: "解析数据",
   debug_import_section: "导入",
@@ -2760,6 +2766,8 @@ const EN: typeof JA = {
   bts_sys_casual: (style: string) => `Speaking style: ${style}`,
   bts_sys_interests: (list: string) => `Interests: ${list}`,
   bts_sys_quirks: (list: string) => `Verbal tics / habits: ${list}`,
+  bts_group_system: (performers: string, history: string) =>
+    `You simultaneously play multiple fictional voice actors in a green room. Respond in English.\n\n[Performers present]\n${performers}\n\n[Conversation so far]\n${history || "(no conversation yet)"}\n\n[Rules]\n- A performer who is directly addressed must respond\n- Unaddressed messages are to everyone; any performer may respond if it feels natural\n- Performers with no reaction are simply omitted from output\n- Action-only responses (gesture, expression, movement) are allowed\n- Natural interruptions and mid-sentence cutoffs are allowed\n\n[Output format]\nJSON array only. No explanation or preamble.\n[{"speaker":"Name","type":"dialogue","content":"line"},{"speaker":"Name","type":"action","content":"action description"}]\ntype must be "dialogue" or "action" only.`,
 
   debug_title: "Analysis Data",
   debug_import_section: "Import",

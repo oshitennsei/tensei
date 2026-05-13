@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "../components/Button";
-import { getOrCreateSkill, createBtsSession, btsChat, appendBtsTurn, listBtsSessions, generateCrewInterjection } from "@/lib/bts";
+import {
+  getOrCreateSkill, createBtsSession, btsGroupChat, appendBtsTurn,
+  listBtsSessions, generateCrewInterjection,
+  type SkillWithEntity,
+} from "@/lib/bts";
 import { db } from "@/lib/storage";
-import type { Work, PerformanceSession, PerformerSkill, Entity, BtsSession, BtsTurn, BtsLocation, BtsCrewMember } from "@/lib/storage";
+import type { Work, PerformanceSession, BtsSession, BtsTurn, BtsLocation, BtsCrewMember } from "@/lib/storage";
 import { useStrings } from "@/lib/i18n";
 
 interface Props {
@@ -18,22 +22,17 @@ interface DisplayMessage {
   role: "user" | "performer" | "crew";
   speakerName: string;
   content: string;
-}
-
-interface SkillWithEntity {
-  skill: PerformerSkill;
-  entity: Entity;
+  turn_type?: "dialogue" | "action";
 }
 
 export function BtsScreen({ work, performanceSession, onBack, initialSession, initialLocation, initialCrew }: Props) {
   const str = useStrings();
   const [btsSession, setBtsSession] = useState<BtsSession | null>(null);
   const [skills, setSkills] = useState<SkillWithEntity[]>([]);
-  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [pendingBubbles, setPendingBubbles] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [crewVisible, setCrewVisible] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -50,36 +49,24 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
   useEffect(() => {
     const load = async () => {
       const characterIds = performanceSession.characters_in_scene;
-
       const skillsWithEntities: SkillWithEntity[] = [];
       for (const charId of characterIds) {
         const [skill, entity] = await Promise.all([
           getOrCreateSkill(charId, work.id),
           db.entities.get(charId),
         ]);
-        if (skill && entity) {
-          skillsWithEntities.push({ skill, entity });
-        }
+        if (skill && entity) skillsWithEntities.push({ skill, entity });
       }
       setSkills(skillsWithEntities);
-
-      if (skillsWithEntities.length > 0) {
-        setSelectedSkillId(skillsWithEntities[0].skill.id);
-      }
 
       let session: BtsSession;
       if (initialSession) {
         session = initialSession;
       } else {
-        const existingSessions = await listBtsSessions(work.id);
-        session = existingSessions.length > 0
-          ? existingSessions[0]
-          : await createBtsSession(
-              work.id,
-              performanceSession.characters_in_scene,
-              initialLocation ?? "rest_area",
-              initialCrew ?? []
-            );
+        const existing = await listBtsSessions(work.id);
+        session = existing.length > 0
+          ? existing[0]
+          : await createBtsSession(work.id, characterIds, initialLocation ?? "rest_area", initialCrew ?? []);
       }
       setBtsSession(session);
 
@@ -90,84 +77,97 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         if (turn.speaker_skill_id === "crew") {
           return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
         }
-        const matchedSkill = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
-        const speakerName = matchedSkill?.entity.canonical_name ?? turn.speaker_skill_id;
-        return { role: "performer" as const, speakerName, content: turn.content };
+        const matched = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
+        return {
+          role: "performer" as const,
+          speakerName: matched?.entity.canonical_name ?? turn.speaker_skill_id,
+          content: turn.content,
+          turn_type: turn.turn_type,
+        };
       });
       setMessages(displayMessages);
     };
-
     load();
   }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText]);
-
-  const selectedSkillWithEntity = skills.find(s => s.skill.id === selectedSkillId);
-  const selectedEntityName = selectedSkillWithEntity?.entity.canonical_name ?? "";
+  }, [messages, pendingBubbles]);
 
   const handleSend = async () => {
-    if (!btsSession || !selectedSkillId || !input.trim() || streaming) return;
+    if (!btsSession || !input.trim() || streaming || skills.length === 0) return;
 
     const userMessage = input.trim();
     setInput("");
     setError(null);
+    setPendingBubbles([]);
 
     setMessages(prev => [...prev, { role: "user", speakerName: str.bts_you, content: userMessage }]);
     setStreaming(true);
 
-    const userTurn: BtsTurn = {
-      speaker_skill_id: "user",
-      content: userMessage,
-      timestamp: Date.now(),
-    };
-    await appendBtsTurn(btsSession.id, userTurn);
+    await appendBtsTurn(btsSession.id, { speaker_skill_id: "user", content: userMessage, timestamp: Date.now() });
 
     abortRef.current = new AbortController();
-    let accumulated = "";
+    const completedTurns: BtsTurn[] = [];
 
     try {
-      for await (const delta of btsChat(btsSession, selectedSkillId, userMessage, abortRef.current.signal)) {
-        accumulated += delta;
-        setStreamingText(accumulated);
-      }
+      for await (const chunk of btsGroupChat(btsSession, skills, userMessage, abortRef.current.signal)) {
+        if (chunk.event === "turn_done") {
+          const { turn } = chunk;
+          const bubble: DisplayMessage = {
+            role: "performer",
+            speakerName: turn.speaker_name,
+            content: turn.content,
+            turn_type: turn.turn_type,
+          };
+          // Move from pending to committed as each turn arrives
+          setPendingBubbles(prev => [...prev, bubble]);
 
-      const performerTurn: BtsTurn = {
-        speaker_skill_id: selectedSkillId,
-        content: accumulated,
-        timestamp: Date.now(),
-      };
-      await appendBtsTurn(btsSession.id, performerTurn);
+          const dbTurn: BtsTurn = {
+            speaker_skill_id: turn.speaker_skill_id,
+            content: turn.content,
+            timestamp: Date.now(),
+            turn_type: turn.turn_type,
+          };
+          await appendBtsTurn(btsSession.id, dbTurn);
+          completedTurns.push(dbTurn);
+        } else if (chunk.event === "all_done") {
+          // Commit all pending bubbles to main messages list
+          setPendingBubbles([]);
+          setMessages(prev => [
+            ...prev,
+            ...completedTurns.map(t => {
+              const matched = skills.find(s => s.skill.id === t.speaker_skill_id);
+              return {
+                role: "performer" as const,
+                speakerName: matched?.entity.canonical_name ?? t.speaker_skill_id,
+                content: t.content,
+                turn_type: t.turn_type,
+              };
+            }),
+          ]);
 
-      setMessages(prev => [
-        ...prev,
-        { role: "performer", speakerName: selectedEntityName, content: accumulated },
-      ]);
-      setStreamingText("");
-
-      const lastExchange = `${userMessage}\n${accumulated}`;
-      const crewLine = await generateCrewInterjection(btsSession, lastExchange);
-      if (crewLine) {
-        const crewTurn: BtsTurn = {
-          speaker_skill_id: "crew",
-          content: crewLine,
-          timestamp: Date.now(),
-        };
-        await appendBtsTurn(btsSession.id, crewTurn);
-        setMessages(prev => [...prev, { role: "crew", speakerName: str.bts_staff, content: crewLine }]);
+          // Crew interjection (occasional)
+          const lastExchange = `${userMessage}\n${completedTurns.map(t => t.content).join("\n")}`;
+          const crewLine = await generateCrewInterjection(btsSession, lastExchange);
+          if (crewLine) {
+            const crewTurn: BtsTurn = { speaker_skill_id: "crew", content: crewLine, timestamp: Date.now() };
+            await appendBtsTurn(btsSession.id, crewTurn);
+            setMessages(prev => [...prev, { role: "crew", speakerName: str.bts_staff, content: crewLine }]);
+          }
+        }
       }
     } catch (e: unknown) {
       if ((e as Error)?.name !== "AbortError") {
         setError(str.bts_error);
-        setStreamingText("");
+        setPendingBubbles([]);
       }
     } finally {
       setStreaming(false);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -181,21 +181,16 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         <p className="text-sm font-semibold flex-1">{str.bts_title}</p>
       </header>
 
-      {/* Performer tabs */}
+      {/* Performers present (display only) */}
       {skills.length > 0 && (
         <div className="flex gap-2 px-3 py-2 overflow-x-auto border-b border-gray-100 shrink-0">
           {skills.map(({ skill, entity }) => (
-            <button
+            <span
               key={skill.id}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                selectedSkillId === skill.id
-                  ? "bg-indigo-100 text-indigo-700 font-semibold"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-              onClick={() => setSelectedSkillId(skill.id)}
+              className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600"
             >
               {entity.canonical_name}
-            </button>
+            </span>
           ))}
         </div>
       )}
@@ -224,23 +219,20 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
 
       {/* Status line */}
       <div className="px-3 py-1.5 border-b border-gray-100 shrink-0">
-        <p className="text-xs text-gray-400">
-          {locationLabel(btsSession?.location ?? "rest_area")}{selectedEntityName ? str.bts_talk_to(selectedEntityName) : ""}
-        </p>
+        <p className="text-xs text-gray-400">{locationLabel(btsSession?.location ?? "rest_area")}</p>
       </div>
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {messages.length === 0 && !streamingText && (
-          <p className="text-center text-xs text-gray-400 mt-8">
-            {str.bts_empty}
-          </p>
+        {messages.length === 0 && pendingBubbles.length === 0 && !streaming && (
+          <p className="text-center text-xs text-gray-400 mt-8">{str.bts_empty}</p>
         )}
-        {messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} />
-        ))}
-        {streamingText && (
-          <PerformerBubble name={selectedEntityName} content={streamingText} streaming />
+        {messages.map((msg, i) => <MessageBubble key={i} message={msg} />)}
+        {pendingBubbles.map((msg, i) => <MessageBubble key={`p${i}`} message={msg} />)}
+        {streaming && pendingBubbles.length === 0 && (
+          <div className="flex justify-start">
+            <div className="rounded-tr-xl rounded-br-xl rounded-bl-xl px-3 py-2 text-sm bg-white/80 text-gray-400 animate-pulse">▋</div>
+          </div>
         )}
         {error && (
           <div className="text-center">
@@ -253,21 +245,16 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
       {/* Input row */}
       <div className="border-t border-gray-200 p-3 shrink-0">
         <div className="flex gap-2">
-          <input
-            type="text"
+          <textarea
+            rows={2}
             placeholder={str.bts_placeholder}
-            className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={streaming}
           />
-          <Button
-            size="sm"
-            onClick={handleSend}
-            disabled={streaming || !input.trim()}
-            className="self-end"
-          >
+          <Button size="sm" onClick={handleSend} disabled={streaming || !input.trim()} className="self-end">
             {str.bts_send}
           </Button>
         </div>
@@ -289,16 +276,21 @@ function MessageBubble({ message }: { message: DisplayMessage }) {
       </div>
     );
   }
-  return <PerformerBubble name={message.speakerName} content={message.content} />;
+  return <PerformerBubble name={message.speakerName} content={message.content} turnType={message.turn_type} />;
 }
 
-function PerformerBubble({ name, content, streaming }: { name: string; content: string; streaming?: boolean }) {
+function PerformerBubble({ name, content, turnType }: { name: string; content: string; turnType?: "dialogue" | "action" }) {
+  const isAction = turnType === "action";
   return (
     <div className="flex justify-start">
       <div className="max-w-[85%]">
         {name && <p className="text-xs text-gray-400 mb-0.5">{name}</p>}
-        <div className="rounded-tr-xl rounded-br-xl rounded-bl-xl px-3 py-2 text-sm whitespace-pre-wrap break-words bg-white/80 text-gray-800">
-          {content || (streaming && <span className="animate-pulse">▋</span>)}
+        <div className={`rounded-tr-xl rounded-br-xl rounded-bl-xl px-3 py-2 text-sm whitespace-pre-wrap break-words ${
+          isAction
+            ? "bg-gray-50 text-gray-500 italic border border-gray-100"
+            : "bg-white/80 text-gray-800"
+        }`}>
+          {isAction ? `*${content}*` : content}
         </div>
       </div>
     </div>
@@ -308,9 +300,7 @@ function PerformerBubble({ name, content, streaming }: { name: string; content: 
 function CrewBubble({ content }: { content: string }) {
   return (
     <div className="flex justify-center my-1">
-      <p className="text-xs text-gray-400 italic bg-gray-50 rounded px-2 py-1 max-w-[90%]">
-        {content}
-      </p>
+      <p className="text-xs text-gray-400 italic bg-gray-50 rounded px-2 py-1 max-w-[90%]">{content}</p>
     </div>
   );
 }

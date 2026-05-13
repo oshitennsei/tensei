@@ -444,6 +444,7 @@ export interface BtsTurn {
   speaker_skill_id: string;
   content: string;
   timestamp: number;
+  turn_type?: "dialogue" | "action";
 }
 
 export interface BtsCrewMember {
