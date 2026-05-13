@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "../components/Button";
 import {
   getOrCreateSkill, createBtsSession, btsGroupChat, appendBtsTurn,
-  listBtsSessions, generateCrewInterjection, generateAmbientEvent,
+  generateBtsOpening, generateCrewInterjection, generateAmbientEvent,
   type SkillWithEntity,
 } from "@/lib/bts";
 import { db } from "@/lib/storage";
@@ -61,27 +61,25 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         }
         setSkills(skillsWithEntities);
 
-        let session: BtsSession;
-        if (initialSession) {
-          session = initialSession;
-        } else {
-          const existing = await listBtsSessions(work.id);
-          session = existing.length > 0
-            ? existing[0]
-            : await createBtsSession(work.id, characterIds, initialLocation ?? "rest_area", initialCrew ?? []);
+        // Always start a fresh session — BTS is ephemeral by design
+        const session = await createBtsSession(
+          work.id, characterIds, initialLocation ?? "rest_area", initialCrew ?? [],
+        );
+
+        // Generate initial scene: character activities + opening greetings
+        const { character_states, opening_turns } = await generateBtsOpening(session, skillsWithEntities);
+        if (Object.keys(character_states).length > 0) {
+          await db.bts_sessions.update(session.id, { character_states });
+          session.character_states = character_states;
         }
+        for (const turn of opening_turns) {
+          await appendBtsTurn(session.id, turn);
+        }
+        session.conversation_history = opening_turns;
+
         setBtsSession(session);
 
-        const displayMessages: DisplayMessage[] = session.conversation_history.map((turn: BtsTurn) => {
-          if (turn.speaker_skill_id === "user") {
-            return { role: "user" as const, speakerName: str.bts_you, content: turn.content };
-          }
-          if (turn.speaker_skill_id === "crew") {
-            return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
-          }
-          if (turn.speaker_skill_id === "ambient") {
-            return { role: "ambient" as const, speakerName: "", content: turn.content };
-          }
+        const displayMessages: DisplayMessage[] = opening_turns.map((turn: BtsTurn) => {
           const matched = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
           return {
             role: "performer" as const,

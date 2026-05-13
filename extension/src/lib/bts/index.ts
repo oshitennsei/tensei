@@ -374,6 +374,111 @@ function tryExtractObjects(buffer: string): { turns: BtsGroupTurn[]; remaining: 
   return { turns, remaining: buffer.slice(pos) };
 }
 
+export interface BtsOpeningResult {
+  character_states: Record<string, string>; // skill_id -> current activity
+  opening_turns: BtsTurn[];
+}
+
+export async function generateBtsOpening(
+  session: BtsSession,
+  skills: SkillWithEntity[],
+): Promise<BtsOpeningResult> {
+  if (skills.length === 0) return { character_states: {}, opening_turns: [] };
+
+  const appSettings = await db.app_settings.get("global");
+  const lang = langFromStorage(appSettings?.ui_language);
+
+  const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
+  if (!client) return { character_states: {}, opening_turns: [] };
+
+  const nameToId = new Map(skills.map(({ skill, entity }) => [entity.canonical_name, skill.id]));
+
+  type Locale = "ja" | "zh-tw" | "zh-cn" | "en";
+
+  const locationLabels: Record<BtsLocation, Record<Locale, string>> = {
+    rest_area:    { ja: "楽屋（休憩室）", "zh-tw": "後台休息室", "zh-cn": "后台休息室", en: "green room" },
+    makeup_room:  { ja: "メイクルーム",   "zh-tw": "化妝室",     "zh-cn": "化妆室",     en: "makeup room" },
+    set:          { ja: "撮影セット",     "zh-tw": "攝影棚",     "zh-cn": "摄影棚",     en: "film set" },
+    cafeteria:    { ja: "食堂",           "zh-tw": "餐廳",       "zh-cn": "食堂",       en: "cafeteria" },
+  };
+
+  const langOutputHints: Record<string, string> = {
+    ja:      "statesとopeningのcontentはすべて日本語で出力。",
+    "zh-tw": "states及opening的content全部使用繁體中文輸出。",
+    "zh-cn": "states及opening的content全部使用简体中文输出。",
+    en:      "All states and opening content must be in English.",
+  };
+
+  const locationLabel = (locationLabels[session.location] as Record<string, string>)[lang]
+    ?? locationLabels[session.location].ja;
+  const langHint = langOutputHints[lang] ?? langOutputHints.ja;
+
+  const performerList = skills.map(({ skill, entity }) => {
+    const traits = skill.personality_traits?.slice(0, 2).join("・") ?? "";
+    const casual = skill.off_set_persona?.casual_style ?? "";
+    const quirks = skill.off_set_persona?.quirks?.slice(0, 1).join("") ?? "";
+    return [
+      `名前: ${entity.canonical_name}`,
+      traits ? `性格: ${traits}` : "",
+      casual ? `普段の口調: ${casual}` : "",
+      quirks ? `癖: ${quirks}` : "",
+    ].filter(Boolean).join(" / ");
+  }).join("\n");
+
+  const prompt = [
+    `場所: ${locationLabel}`,
+    `出演者:\n${performerList}`,
+    "",
+    "タスク: ユーザーが楽屋に入ってきた瞬間のシーンを生成してください。",
+    "1. 各出演者の現在の状態（何をしているか）",
+    "2. ユーザーが入ってきた時の自然なリアクション（0〜4ターン）",
+    "   ※全員が挨拶する必要はない。性格によっては無視・会釈のみ・気づかないも可",
+    "",
+    "出力形式（JSONのみ、説明不要）:",
+    JSON.stringify({
+      states: { "演者名A": "短い状態描写（10字以内）", "演者名B": "短い状態描写" },
+      opening: [
+        { speaker: "演者名", type: "action", content: "動作や様子" },
+        { speaker: "演者名", type: "dialogue", content: "セリフ" },
+      ],
+    }),
+    "",
+    `ルール: statesは全演者分必須。openingのtypeは"dialogue"または"action"のみ。${langHint}`,
+  ].join("\n");
+
+  try {
+    const raw = await client.complete([
+      { role: "system", content: prompt },
+      { role: "user", content: "生成" },
+    ]);
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+    interface RawOpening {
+      states?: Record<string, string>;
+      opening?: Array<{ speaker: string; type: string; content: string }>;
+    }
+
+    const parsed = JSON.parse(cleaned) as RawOpening;
+
+    const character_states: Record<string, string> = {};
+    for (const [name, state] of Object.entries(parsed.states ?? {})) {
+      const skillId = nameToId.get(name);
+      if (skillId) character_states[skillId] = String(state);
+    }
+
+    const opening_turns: BtsTurn[] = (parsed.opening ?? []).map(t => ({
+      speaker_skill_id: nameToId.get(t.speaker) ?? t.speaker,
+      content: t.content,
+      timestamp: Date.now(),
+      turn_type: t.type === "action" ? "action" : "dialogue",
+    }));
+
+    return { character_states, opening_turns };
+  } catch {
+    return { character_states: {}, opening_turns: [] };
+  }
+}
+
 export async function* btsGroupChat(
   session: BtsSession,
   presentSkills: SkillWithEntity[],
@@ -388,7 +493,8 @@ export async function* btsGroupChat(
   );
 
   const performerDescs = presentSkills.map(({ skill, entity }) => {
-    const parts: string[] = [entity.canonical_name];
+    const state = session.character_states?.[skill.id];
+    const parts: string[] = [`${entity.canonical_name}${state ? `（${state}）` : ""}`];
     if (skill.off_set_persona?.casual_style) parts.push(`${s.bts_sys_casual(skill.off_set_persona.casual_style)}`);
     if (skill.off_set_persona?.quirks?.length) parts.push(`${s.bts_sys_quirks(skill.off_set_persona.quirks.join("、"))}`);
     return `- ${parts.join(" / ")}`;

@@ -467,6 +467,7 @@ export interface BtsSession {
   present_crew: BtsCrewMember[];
   location: BtsLocation;
   conversation_history: BtsTurn[];
+  character_states?: Record<string, string>; // skill_id -> current activity
   created_at: number;
   last_active: number;
 }
