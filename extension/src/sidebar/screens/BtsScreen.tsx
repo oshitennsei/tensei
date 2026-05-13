@@ -32,6 +32,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [pendingBubbles, setPendingBubbles] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(true);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [crewVisible, setCrewVisible] = useState(false);
@@ -48,47 +49,53 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
 
   useEffect(() => {
     const load = async () => {
-      const characterIds = performanceSession.characters_in_scene;
-      const skillsWithEntities: SkillWithEntity[] = [];
-      for (const charId of characterIds) {
-        const [skill, entity] = await Promise.all([
-          getOrCreateSkill(charId, work.id),
-          db.entities.get(charId),
-        ]);
-        if (skill && entity) skillsWithEntities.push({ skill, entity });
-      }
-      setSkills(skillsWithEntities);
+      try {
+        const characterIds = performanceSession.characters_in_scene;
+        const skillsWithEntities: SkillWithEntity[] = [];
+        for (const charId of characterIds) {
+          const [skill, entity] = await Promise.all([
+            getOrCreateSkill(charId, work.id),
+            db.entities.get(charId),
+          ]);
+          if (skill && entity) skillsWithEntities.push({ skill, entity });
+        }
+        setSkills(skillsWithEntities);
 
-      let session: BtsSession;
-      if (initialSession) {
-        session = initialSession;
-      } else {
-        const existing = await listBtsSessions(work.id);
-        session = existing.length > 0
-          ? existing[0]
-          : await createBtsSession(work.id, characterIds, initialLocation ?? "rest_area", initialCrew ?? []);
-      }
-      setBtsSession(session);
+        let session: BtsSession;
+        if (initialSession) {
+          session = initialSession;
+        } else {
+          const existing = await listBtsSessions(work.id);
+          session = existing.length > 0
+            ? existing[0]
+            : await createBtsSession(work.id, characterIds, initialLocation ?? "rest_area", initialCrew ?? []);
+        }
+        setBtsSession(session);
 
-      const displayMessages: DisplayMessage[] = session.conversation_history.map((turn: BtsTurn) => {
-        if (turn.speaker_skill_id === "user") {
-          return { role: "user" as const, speakerName: str.bts_you, content: turn.content };
-        }
-        if (turn.speaker_skill_id === "crew") {
-          return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
-        }
-        if (turn.speaker_skill_id === "ambient") {
-          return { role: "ambient" as const, speakerName: "", content: turn.content };
-        }
-        const matched = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
-        return {
-          role: "performer" as const,
-          speakerName: matched?.entity.canonical_name ?? turn.speaker_skill_id,
-          content: turn.content,
-          turn_type: turn.turn_type,
-        };
-      });
-      setMessages(displayMessages);
+        const displayMessages: DisplayMessage[] = session.conversation_history.map((turn: BtsTurn) => {
+          if (turn.speaker_skill_id === "user") {
+            return { role: "user" as const, speakerName: str.bts_you, content: turn.content };
+          }
+          if (turn.speaker_skill_id === "crew") {
+            return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
+          }
+          if (turn.speaker_skill_id === "ambient") {
+            return { role: "ambient" as const, speakerName: "", content: turn.content };
+          }
+          const matched = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
+          return {
+            role: "performer" as const,
+            speakerName: matched?.entity.canonical_name ?? turn.speaker_skill_id,
+            content: turn.content,
+            turn_type: turn.turn_type,
+          };
+        });
+        setMessages(displayMessages);
+      } catch (e) {
+        setError(str.bts_error);
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, []);
@@ -108,12 +115,11 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
     setMessages(prev => [...prev, { role: "user", speakerName: str.bts_you, content: userMessage }]);
     setStreaming(true);
 
-    await appendBtsTurn(btsSession.id, { speaker_skill_id: "user", content: userMessage, timestamp: Date.now() });
-
     abortRef.current = new AbortController();
     const completedTurns: BtsTurn[] = [];
 
     try {
+      await appendBtsTurn(btsSession.id, { speaker_skill_id: "user", content: userMessage, timestamp: Date.now() });
       for await (const chunk of btsGroupChat(btsSession, skills, userMessage, abortRef.current.signal)) {
         if (chunk.event === "turn_done") {
           const { turn } = chunk;
@@ -235,7 +241,10 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {messages.length === 0 && pendingBubbles.length === 0 && !streaming && (
+        {loading && (
+          <p className="text-center text-xs text-gray-400 mt-8 animate-pulse">{str.performer_loading}</p>
+        )}
+        {!loading && messages.length === 0 && pendingBubbles.length === 0 && !streaming && (
           <p className="text-center text-xs text-gray-400 mt-8">{str.bts_empty}</p>
         )}
         {messages.map((msg, i) => <MessageBubble key={i} message={msg} />)}
@@ -263,9 +272,9 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={streaming}
+            disabled={loading || streaming}
           />
-          <Button size="sm" onClick={handleSend} disabled={streaming || !input.trim()} className="self-end">
+          <Button size="sm" onClick={handleSend} disabled={loading || streaming || !input.trim() || !btsSession || skills.length === 0} className="self-end">
             {str.bts_send}
           </Button>
         </div>
