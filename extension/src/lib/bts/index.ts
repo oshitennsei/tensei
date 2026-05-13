@@ -394,15 +394,17 @@ export async function* btsGroupChat(
     return `- ${parts.join(" / ")}`;
   }).join("\n");
 
-  const historyText = session.conversation_history.slice(-20).map(turn => {
-    const name = turn.speaker_skill_id === "user"
-      ? s.bts_you
-      : turn.speaker_skill_id === "crew"
-      ? s.bts_staff
-      : (presentSkills.find(x => x.skill.id === turn.speaker_skill_id)?.entity.canonical_name ?? turn.speaker_skill_id);
-    const prefix = turn.turn_type === "action" ? `*${turn.content}*` : turn.content;
-    return `[${name}]: ${prefix}`;
-  }).join("\n");
+  const historyText = session.conversation_history.slice(-20)
+    .filter(turn => turn.speaker_skill_id !== "ambient") // ambient events are scene flavour, not dialogue
+    .map(turn => {
+      const name = turn.speaker_skill_id === "user"
+        ? s.bts_you
+        : turn.speaker_skill_id === "crew"
+        ? s.bts_staff
+        : (presentSkills.find(x => x.skill.id === turn.speaker_skill_id)?.entity.canonical_name ?? turn.speaker_skill_id);
+      const prefix = turn.turn_type === "action" ? `*${turn.content}*` : turn.content;
+      return `[${name}]: ${prefix}`;
+    }).join("\n");
 
   const systemContent = s.bts_group_system(performerDescs, historyText);
 
@@ -494,4 +496,82 @@ export async function generateCrewInterjection(
   }
 
   return `**${member.name}（${member.role}）**: ${response.trim()}`;
+}
+
+// ── Ambient on-set events ─────────────────────────────────────────────────────
+// Very low probability (~5%). Generates a one-line scene description (tea delivery,
+// makeup touch-up, etc.) independent of defined crew members. Stored in history
+// as speaker_skill_id:"ambient" but filtered out of LLM context.
+
+export async function generateAmbientEvent(session: BtsSession): Promise<string | null> {
+  if (Math.random() > 0.05) return null;
+  // Don't fire before the conversation has a few exchanges
+  if (session.conversation_history.filter(t => t.speaker_skill_id === "user").length < 2) return null;
+
+  const appSettings = await db.app_settings.get("global");
+  const lang = langFromStorage(appSettings?.ui_language);
+
+  type Locale = "ja" | "zh-tw" | "zh-cn" | "en";
+  const locationHints: Record<BtsLocation, Record<Locale, string>> = {
+    rest_area: {
+      ja:    "スタッフがお茶や温かい飲み物を差し入れる・軽食を置いていく・遠くでスケジュール確認の声がする・誰かが通り過ぎる",
+      "zh-tw": "工作人員送來熱茶或飲料・放下點心・遠處傳來確認時程的聲音・有人路過",
+      "zh-cn": "工作人员送来热茶或饮料・放下零食・远处传来确认日程的声音・有人路过",
+      en:    "A PA brings hot tea or drinks; someone leaves snacks; a distant voice confirming the schedule; footsteps passing by",
+    },
+    makeup_room: {
+      ja:    "ヘアメイクスタッフが粉を押さえに来る・衣装担当がコスチュームを整える・ドライヤーの音がかすかに聞こえる",
+      "zh-tw": "化妝師過來補粉・服裝師調整戲服・隱約傳來吹風機聲",
+      "zh-cn": "化妆师过来补妆・服装师整理戏服・隐约听到吹风机声",
+      en:    "A makeup artist comes to touch up powder; wardrobe adjusts a costume; the faint sound of a hair dryer",
+    },
+    set: {
+      ja:    "照明スタッフがライトを微調整する・小道具担当が確認に来る・遠くで助監督の声がする・機材の作動音がする",
+      "zh-tw": "燈光師微調燈光・道具師過來確認・遠處傳來副導演的聲音・機器設備的運作聲",
+      "zh-cn": "灯光师微调灯光・道具师过来确认・远处传来副导演的声音・设备运作声",
+      en:    "A lighting tech fine-tunes a light; the prop master checks something; the AD's voice in the distance; equipment hum",
+    },
+    cafeteria: {
+      ja:    "食器の触れ合う音・ケータリングスタッフが料理を補充する・誰かがおかわりを取りに立つ・コーヒーマシンの音",
+      "zh-tw": "餐具碰撞聲・餐飲人員補充食物・有人起身去添菜・咖啡機的聲音",
+      "zh-cn": "餐具碰撞声・餐饮人员补充食物・有人起身去添菜・咖啡机声音",
+      en:    "The clink of cutlery; catering staff refills the food; someone gets up for seconds; the coffee machine gurgling",
+    },
+  };
+
+  const locationLabels: Record<BtsLocation, string> = {
+    makeup_room: "化粧室", set: "撮影セット", rest_area: "休憩室", cafeteria: "食堂",
+  };
+
+  const langHints: Record<string, string> = {
+    ja:    "自然な日本語で一文だけ。",
+    "zh-tw": "請用自然的繁體中文寫一句話。",
+    "zh-cn": "请用自然的简体中文写一句话。",
+    en:    "One natural sentence in English.",
+  };
+
+  const hint = (locationHints[session.location] as Record<string, string>)[lang]
+    ?? locationHints[session.location].ja;
+  const locationLabel = locationLabels[session.location];
+  const langHint = langHints[lang] ?? langHints.ja;
+
+  const prompt = [
+    `${locationLabel}での撮影の合間のひとコマを情景描写してください。`,
+    `起きていそうな出来事（参考）: ${hint}`,
+    "一文のみ。演者名・キャラクター名は使わない。スタッフや音・雰囲気など第三者的な視点で短く描写。",
+    langHint,
+  ].join("\n");
+
+  const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
+  if (!client) return null;
+
+  try {
+    const response = await client.complete([
+      { role: "system", content: prompt },
+      { role: "user", content: "描写" },
+    ]);
+    return response.trim();
+  } catch {
+    return null;
+  }
 }

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "../components/Button";
 import {
   getOrCreateSkill, createBtsSession, btsGroupChat, appendBtsTurn,
-  listBtsSessions, generateCrewInterjection,
+  listBtsSessions, generateCrewInterjection, generateAmbientEvent,
   type SkillWithEntity,
 } from "@/lib/bts";
 import { db } from "@/lib/storage";
@@ -19,7 +19,7 @@ interface Props {
 }
 
 interface DisplayMessage {
-  role: "user" | "performer" | "crew";
+  role: "user" | "performer" | "crew" | "ambient";
   speakerName: string;
   content: string;
   turn_type?: "dialogue" | "action";
@@ -76,6 +76,9 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
         }
         if (turn.speaker_skill_id === "crew") {
           return { role: "crew" as const, speakerName: str.bts_staff, content: turn.content };
+        }
+        if (turn.speaker_skill_id === "ambient") {
+          return { role: "ambient" as const, speakerName: "", content: turn.content };
         }
         const matched = skillsWithEntities.find(s => s.skill.id === turn.speaker_skill_id);
         return {
@@ -147,13 +150,21 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
             }),
           ]);
 
-          // Crew interjection (occasional)
+          // Crew interjection or ambient event (mutually exclusive, low probability)
           const lastExchange = `${userMessage}\n${completedTurns.map(t => t.content).join("\n")}`;
           const crewLine = await generateCrewInterjection(btsSession, lastExchange);
           if (crewLine) {
             const crewTurn: BtsTurn = { speaker_skill_id: "crew", content: crewLine, timestamp: Date.now() };
             await appendBtsTurn(btsSession.id, crewTurn);
             setMessages(prev => [...prev, { role: "crew", speakerName: str.bts_staff, content: crewLine }]);
+          } else {
+            // Only roll for ambient if crew didn't interject
+            const ambientLine = await generateAmbientEvent(btsSession);
+            if (ambientLine) {
+              const ambientTurn: BtsTurn = { speaker_skill_id: "ambient", content: ambientLine, timestamp: Date.now() };
+              await appendBtsTurn(btsSession.id, ambientTurn);
+              setMessages(prev => [...prev, { role: "ambient", speakerName: "", content: ambientLine }]);
+            }
           }
         }
       }
@@ -264,6 +275,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
 }
 
 function MessageBubble({ message }: { message: DisplayMessage }) {
+  if (message.role === "ambient") return <AmbientBubble content={message.content} />;
   if (message.role === "crew") return <CrewBubble content={message.content} />;
   if (message.role === "user") {
     return (
@@ -301,6 +313,14 @@ function CrewBubble({ content }: { content: string }) {
   return (
     <div className="flex justify-center my-1">
       <p className="text-xs text-gray-400 italic bg-gray-50 rounded px-2 py-1 max-w-[90%]">{content}</p>
+    </div>
+  );
+}
+
+function AmbientBubble({ content }: { content: string }) {
+  return (
+    <div className="flex justify-center my-2">
+      <p className="text-[11px] text-gray-300 italic text-center max-w-[85%] leading-relaxed">— {content} —</p>
     </div>
   );
 }
