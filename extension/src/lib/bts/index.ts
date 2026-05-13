@@ -1,6 +1,7 @@
 import { LlmClient, LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
 import type { BtsCrewMember, BtsLocation, BtsSession, BtsTurn, PerformerSkill, PerformanceSession } from "@/lib/storage";
+import { getStrings, langFromStorage } from "@/lib/i18n";
 
 export interface BtsSetup {
   location: BtsLocation;
@@ -219,20 +220,20 @@ export async function* btsChat(
     db.entities.get(target_skill_id),
   ]);
 
+  const appSettings = await db.app_settings.get("global");
+  const s = getStrings(langFromStorage(appSettings?.ui_language));
+
   const characterName = entity?.canonical_name ?? target_skill_id;
   const casualStyle = skill?.off_set_persona?.casual_style ?? "";
   const interests = skill?.off_set_persona?.interests ?? [];
   const quirks = skill?.off_set_persona?.quirks ?? [];
 
-  // 3. Build system prompt
-  const systemContent = [
-    `あなたは架空の声優です。「${characterName}」というキャラクターを演じています。`,
-    "今は収録の合間で楽屋にいます。キャラクターとしてではなく、そのキャラクターを演じた声優として自然に話してください。",
-    "",
-    `口調・話し方: ${casualStyle}`,
-    `趣味・関心: ${interests.join("、")}`,
-    `口癖やクセ: ${quirks.join("、")}`,
-  ].join("\n");
+  // 3. Build system prompt using locale strings
+  const systemParts = [s.bts_sys_intro(characterName), s.bts_sys_context];
+  if (casualStyle) systemParts.push(s.bts_sys_casual(casualStyle));
+  if (interests.length) systemParts.push(s.bts_sys_interests(interests.join("、")));
+  if (quirks.length) systemParts.push(s.bts_sys_quirks(quirks.join("、")));
+  const systemContent = systemParts.join("\n");
 
   // 4. Build message history from last 12 turns
   const history = session.conversation_history.slice(-12).map(turn => ({

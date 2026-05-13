@@ -584,6 +584,11 @@ const JA = {
   bts_send: "送信",
   bts_you: "あなた",
   bts_staff: "スタッフ",
+  bts_sys_intro: (name: string) => `あなたは架空の声優です。「${name}」というキャラクターを演じています。`,
+  bts_sys_context: "今は収録の合間で楽屋にいます。キャラクターとしてではなく、そのキャラクターを演じた声優として自然に話してください。",
+  bts_sys_casual: (style: string) => `口調・話し方: ${style}`,
+  bts_sys_interests: (list: string) => `趣味・関心: ${list}`,
+  bts_sys_quirks: (list: string) => `口癖やクセ: ${list}`,
 
   // DebugScreen
   debug_title: "解析データ",
@@ -1304,6 +1309,11 @@ const ZH_TW: typeof JA = {
   bts_send: "發送",
   bts_you: "你",
   bts_staff: "工作人員",
+  bts_sys_intro: (name: string) => `你是一位虛構的配音演員，正在為「${name}」這個角色配音。`,
+  bts_sys_context: "現在是錄製間隙，你在後台休息室。請以配音演員的身份自然交談，而不是以角色的身份。請用繁體中文回應。",
+  bts_sys_casual: (style: string) => `說話風格: ${style}`,
+  bts_sys_interests: (list: string) => `興趣愛好: ${list}`,
+  bts_sys_quirks: (list: string) => `口頭禪・習慣: ${list}`,
 
   debug_title: "解析資料",
   debug_import_section: "匯入",
@@ -2022,6 +2032,11 @@ const ZH_CN: typeof JA = {
   bts_send: "发送",
   bts_you: "你",
   bts_staff: "工作人员",
+  bts_sys_intro: (name: string) => `你是一位虚构的配音演员，正在为「${name}」这个角色配音。`,
+  bts_sys_context: "现在是录制间隙，你在后台休息室。请以配音演员的身份自然交谈，而不是以角色的身份。请用简体中文回应。",
+  bts_sys_casual: (style: string) => `说话风格: ${style}`,
+  bts_sys_interests: (list: string) => `兴趣爱好: ${list}`,
+  bts_sys_quirks: (list: string) => `口头禅・习惯: ${list}`,
 
   debug_title: "解析数据",
   debug_import_section: "导入",
@@ -2740,6 +2755,11 @@ const EN: typeof JA = {
   bts_send: "Send",
   bts_you: "You",
   bts_staff: "Crew",
+  bts_sys_intro: (name: string) => `You are a fictional voice actor playing the character "${name}".`,
+  bts_sys_context: "You are currently in the green room between takes. Speak naturally as the voice actor, not as the character. Respond in English.",
+  bts_sys_casual: (style: string) => `Speaking style: ${style}`,
+  bts_sys_interests: (list: string) => `Interests: ${list}`,
+  bts_sys_quirks: (list: string) => `Verbal tics / habits: ${list}`,
 
   debug_title: "Analysis Data",
   debug_import_section: "Import",
