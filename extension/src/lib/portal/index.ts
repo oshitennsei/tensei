@@ -172,3 +172,31 @@ export async function verifyCodeOnKakuyomu(workId: string, code: string): Promis
     return null;
   } catch { return null; }
 }
+
+export async function verifyCodeOnSyosetu(ncode: string, code: string): Promise<string | null> {
+  try {
+    // Step 1: fetch work TOC page to find synopsis and author userid
+    const tocRes = await fetch(`https://ncode.syosetu.com/${ncode}/`);
+    if (!tocRes.ok) return null;
+    const tocHtml = await tocRes.text();
+
+    // Check synopsis (novel_ex) on TOC page first
+    const synopsisMatch = tocHtml.match(/id="novel_ex"[^>]*>([\s\S]*?)<\/div>/);
+    const synopsis = synopsisMatch ? synopsisMatch[1] : "";
+    if (synopsis.includes(code)) return synopsis.slice(0, 600);
+
+    // Extract userid from mypage link: mypage.syosetu.com/{userid}/
+    const userIdMatch = tocHtml.match(/mypage\.syosetu\.com\/(\d+)\//);
+    if (!userIdMatch) return null;
+    const userId = userIdMatch[1];
+
+    // Step 2: fetch 活動報告 listing for this author
+    const blogRes = await fetch(`https://mypage.syosetu.com/mypageblog/list/userid/${userId}/`);
+    if (!blogRes.ok) return null;
+    const blogHtml = await blogRes.text();
+
+    const idx = blogHtml.indexOf(code);
+    if (idx === -1) return null;
+    return blogHtml.slice(Math.max(0, idx - 50), idx + 600);
+  } catch { return null; }
+}

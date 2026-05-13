@@ -51,6 +51,7 @@ function prepareFiles(files: File[], nextChapter: number): ParsedFile[] {
 interface Props {
   onBack: () => void;
   onDone: (work: Work, chapter_number: number) => void;
+  onWorkRegister: (workUrl?: string) => void;
 }
 
 interface KkEpisodeItem {
@@ -71,7 +72,7 @@ type Step = "pick" | "new-work" | "mode" | "chapter" | "batch-select" | "batch-r
   | "kakuyomu-check" | "kakuyomu-unauthorized" | "kakuyomu-select" | "kakuyomu-run"
   | "syosetu-check" | "syosetu-unauthorized" | "syosetu-select" | "syosetu-run";
 
-export function IngestScreen({ onBack, onDone }: Props) {
+export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
   const str = useStrings();
   const [step, setStep] = useState<Step>("pick");
   const [works, setWorks] = useState<Work[]>([]);
@@ -493,14 +494,12 @@ export function IngestScreen({ onBack, onDone }: Props) {
             {/* Author registration link */}
             <div className="border-t border-gray-100 pt-3">
               <p className="text-xs text-gray-400 mb-1.5">{str.kk_if_author}</p>
-              <a
-                href="https://tensei-portal.pages.dev"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-center text-sm text-indigo-600 underline"
+              <button
+                onClick={() => onWorkRegister(kkWorkUrl)}
+                className="block w-full text-center text-sm text-indigo-600 underline"
               >
                 {str.kk_portal_link}
-              </a>
+              </button>
             </div>
           </div>
         )}
@@ -631,14 +630,12 @@ export function IngestScreen({ onBack, onDone }: Props) {
 
             <div className="border-t border-gray-100 pt-3">
               <p className="text-xs text-gray-400 mb-1.5">{str.kk_if_author}</p>
-              <a
-                href="https://tensei-portal.pages.dev"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-center text-sm text-indigo-600 underline"
+              <button
+                onClick={() => onWorkRegister(ssWorkUrl)}
+                className="block w-full text-center text-sm text-indigo-600 underline"
               >
                 {str.kk_portal_link}
-              </a>
+              </button>
             </div>
           </div>
         )}
