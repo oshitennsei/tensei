@@ -240,7 +240,7 @@ export function BtsScreen({ work, performanceSession, onBack, initialSession, in
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {loading && (
-          <p className="text-center text-xs text-gray-400 mt-8 animate-pulse">{str.performer_loading}</p>
+          <p className="text-center text-xs text-gray-400 mt-8 animate-pulse">{str.bts_loading}</p>
         )}
         {!loading && messages.length === 0 && pendingBubbles.length === 0 && !streaming && (
           <p className="text-center text-xs text-gray-400 mt-8">{str.bts_empty}</p>
