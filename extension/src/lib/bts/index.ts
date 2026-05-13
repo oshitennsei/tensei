@@ -29,20 +29,37 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
   const existing = await db.performer_skills.get(character_id);
   if (existing) return existing;
 
-  // 2. Load entity and charExt
-  const [entity, charExt] = await Promise.all([
+  // 2. Load entity, charExt, and UI language
+  const [entity, charExt, appSettings] = await Promise.all([
     db.entities.get(character_id),
     db.characters_extended.get(character_id),
+    db.app_settings.get("global"),
   ]);
 
   const name = entity?.canonical_name ?? character_id;
   const description = entity?.description ?? "";
   const speechStyle = charExt?.speech_style ?? "";
+  const uiLang = langFromStorage(appSettings?.ui_language);
+
+  // Naming convention hint based on UI locale
+  const namingHint: Record<string, string> = {
+    ja:    "日本人俳優として、日本語の姓名（例：山田 太郎）を生成してください。",
+    "zh-tw": "請以台灣或華語演員的角度，生成中文姓名（例：林志玲、陳建州）。",
+    "zh-cn": "请以中国大陆演员的角度，生成中文姓名（例：赵薇、吴京）。",
+    en:    "Generate a Western-style actor name (e.g., James Carter, Emma Walsh).",
+  };
+  const namingInstruction = namingHint[uiLang] ?? namingHint.ja;
 
   // 3. Get LLM client (prefer sub_agent, fallback to main)
   const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
 
   interface GeneratedPersona {
+    display_name?: string;
+    gender?: string;
+    birthday?: string;
+    height?: string;
+    birthplace?: string;
+    career_background?: string;
     archetype?: string;
     personality_traits?: string[];
     speech_patterns?: string[];
@@ -64,24 +81,42 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
 
   if (client) {
     const systemPrompt = [
-      "架空の俳優プロフィールをJSONで生成してください。映画・テレビドラマ出身の俳優です。",
+      "架空の映画・テレビドラマ俳優のプロフィールをJSONで生成してください。",
+      namingInstruction,
       `担当キャラクター: ${name}`,
       `キャラクター説明: ${description}`,
       speechStyle ? `キャラクターの話し方: ${speechStyle}` : "",
       "",
-      '必須フィールド: {"archetype":"...","personality_traits":[...],"speech_patterns":[...],"off_set_persona":{"casual_style":"...","quirks":[...],"interests":[]},"signature_style":{"acting_method":"...","strengths":[],"notable_techniques":[]},"contrast_with_role_hints":"..."}',
-      "archetype は俳優としての役柄タイプ（例：個性派、実力派、アイドル系など）。",
-      "off_set_persona はプライベートや撮影現場での素の人格。",
-      "contrast_with_role_hints は担当キャラクターとの性格的な違い。",
-      "JSONのみ返却。",
-    ].filter(l => l !== undefined).join("\n");
+      "必須フィールド（JSONのみ返却）:",
+      JSON.stringify({
+        display_name: "俳優の実名",
+        gender: "性別（キャラクターと一致させること）",
+        birthday: "生年月日（例: 1992-07-15）",
+        height: "身長（例: 170cm）",
+        birthplace: "出身地",
+        career_background: "経歴・デビュー作・受賞歴など（2〜3文）",
+        archetype: "俳優タイプ（例：個性派、実力派、アイドル系）",
+        personality_traits: ["性格特徴1", "性格特徴2"],
+        speech_patterns: ["話し方の特徴"],
+        off_set_persona: {
+          casual_style: "プライベートの口調",
+          quirks: ["癖1"],
+          interests: ["趣味1", "趣味2"],
+        },
+        signature_style: {
+          acting_method: "演技メソッド",
+          strengths: ["得意なこと"],
+          notable_techniques: ["特技"],
+        },
+        contrast_with_role_hints: "担当キャラとの性格的な違い",
+      }),
+    ].filter(Boolean).join("\n");
 
     try {
       const raw = await client.complete([
         { role: "system", content: systemPrompt },
         { role: "user", content: "生成" },
       ]);
-      // Strip markdown code fences if present
       const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
       persona = JSON.parse(cleaned) as GeneratedPersona;
     } catch {
@@ -95,6 +130,12 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
     source: "ai_generated",
     name: `${name}役・俳優`,
     background_type: "fictional",
+    display_name: persona.display_name,
+    gender: persona.gender,
+    birthday: persona.birthday,
+    height: persona.height,
+    birthplace: persona.birthplace,
+    career_background: persona.career_background,
     archetype: persona.archetype ?? "俳優",
     personality_traits: persona.personality_traits ?? [],
     speech_patterns: persona.speech_patterns ?? [],

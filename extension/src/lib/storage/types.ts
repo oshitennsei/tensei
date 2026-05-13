@@ -374,6 +374,13 @@ export interface PerformerSkill {
   background_type: "fictional";
   archetype: string;
   age_range?: string;
+  // Biographical info (auto-generated, user-editable)
+  display_name?: string;      // actor's personal name (language matches UI locale)
+  gender?: string;
+  birthday?: string;
+  height?: string;
+  birthplace?: string;
+  career_background?: string;
   personality_traits: string[];
   speech_patterns: string[];
   off_set_persona: OffSetPersona;

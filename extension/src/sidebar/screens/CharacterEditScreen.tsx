@@ -653,10 +653,73 @@ export function CharacterEditScreen({ work, character_id, onBack, onSaved }: Pro
               </div>
             ) : (
               <>
-                <div className="bg-gray-50 rounded px-3 py-2 text-xs text-gray-500">
-                  <span className="font-medium text-gray-700">{skill.name}</span>
-                  <span className="ml-2">（{skill.archetype}）</span>
-                </div>
+                {/* ── プロフィール ── */}
+                <section>
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.performer_bio_section}</p>
+                  <div className="bg-gray-50 rounded px-3 py-2 mb-2 text-xs text-gray-500">
+                    <span className="font-medium text-gray-700">{skill.display_name ?? skill.name}</span>
+                    <span className="ml-2 text-gray-400">（{skill.archetype}）</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-0.5">{str.performer_display_name}</label>
+                      <input
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                        value={skill.display_name ?? ""}
+                        onChange={e => updateSkillLocal({ display_name: e.target.value })}
+                        onBlur={() => persistSkill({ display_name: skill.display_name })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">{str.performer_gender}</label>
+                        <input
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                          value={skill.gender ?? ""}
+                          onChange={e => updateSkillLocal({ gender: e.target.value })}
+                          onBlur={() => persistSkill({ gender: skill.gender })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">{str.performer_birthday}</label>
+                        <input
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                          value={skill.birthday ?? ""}
+                          onChange={e => updateSkillLocal({ birthday: e.target.value })}
+                          onBlur={() => persistSkill({ birthday: skill.birthday })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">{str.performer_height}</label>
+                        <input
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                          value={skill.height ?? ""}
+                          onChange={e => updateSkillLocal({ height: e.target.value })}
+                          onBlur={() => persistSkill({ height: skill.height })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-0.5">{str.performer_birthplace}</label>
+                        <input
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                          value={skill.birthplace ?? ""}
+                          onChange={e => updateSkillLocal({ birthplace: e.target.value })}
+                          onBlur={() => persistSkill({ birthplace: skill.birthplace })}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-0.5">{str.performer_background}</label>
+                      <textarea
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
+                        rows={2}
+                        value={skill.career_background ?? ""}
+                        onChange={e => updateSkillLocal({ career_background: e.target.value })}
+                        onBlur={() => persistSkill({ career_background: skill.career_background })}
+                      />
+                    </div>
+                  </div>
+                </section>
 
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">{str.performer_casual}</label>

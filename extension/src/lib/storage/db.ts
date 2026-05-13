@@ -140,6 +140,8 @@ class TenseiDb extends Dexie {
     this.version(15).stores({ performance_sessions: "&id, work_id, last_active" });  // index work_id so WorkScreen query works
 
     this.version(16).stores({ bts_sessions: "&id, work_id, last_active" });  // index work_id for listBtsSessions query
+
+    this.version(17).stores({});  // display_name, gender, birthday, height, birthplace, career_background added to PerformerSkill
   }
 }
 
