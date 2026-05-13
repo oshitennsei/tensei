@@ -136,6 +136,8 @@ class TenseiDb extends Dexie {
     this.version(13).stores({});  // portal_work_id on Work, author_summary on Chapter (Phase 6)
 
     this.version(14).stores({ works: "&id, title, author, platform_url" });  // index platform_url for portal linkage
+
+    this.version(15).stores({ performance_sessions: "&id, work_id, last_active" });  // index work_id so WorkScreen query works
   }
 }
 
