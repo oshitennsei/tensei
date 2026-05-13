@@ -299,13 +299,13 @@ export function DashboardPage() {
                   <div className="bg-gray-800 rounded-lg p-4 space-y-2">
                     <p className="text-sm text-gray-300">
                       {workForm.platform === "syosetu"
-                        ? "以下のコードを作品の「近況ノート」に投稿してください："
+                        ? "以下のコードを「活動報告」に新規投稿し、本文に記載して公開してください："
                         : "以下のコードを「作品紹介」の末尾に追記して保存してください："}
                     </p>
                     <code className="block text-indigo-300 font-mono text-sm bg-gray-900 rounded px-4 py-2 select-all">{verifyCode}</code>
                     <p className="text-xs text-gray-500">
                       {workForm.platform === "syosetu"
-                        ? "小説家になろう：作品管理 → 近況ノート（または作者ノート）に投稿"
+                        ? "小説家になろう：マイページ → 活動報告 → 新規投稿 → 本文にコードを記載して公開"
                         : "カクヨム：作品管理 → 作品紹介の末尾にコードを追記して保存"}
                     </p>
                   </div>
