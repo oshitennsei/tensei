@@ -65,6 +65,95 @@ export async function portalRegisterWork(token: string, params: {
   return { work_id: data.work_id!, slug: data.slug! };
 }
 
+export async function portalCheckWorkLink(platformUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${PORTAL_BASE}/whitelist?work_url=${encodeURIComponent(platformUrl)}`);
+    if (!res.ok) return null;
+    const data = await res.json() as { authorized: boolean; work?: { id: string } };
+    return data.authorized && data.work?.id ? data.work.id : null;
+  } catch { return null; }
+}
+
+// ── Phase 6: character + summary sync ────────────────────────────────────────
+
+export type LockedField = "persona" | "speech_style" | "will_not_do" | "forbidden_topics";
+
+export interface PortalCharacterResult {
+  id: string;
+  slug: string;
+  name: string;
+  data: {
+    persona?: string;
+    speech_style?: string;
+    will_do?: string[];
+    will_not_do?: string[];
+    forbidden_topics?: string[];
+    voice_samples?: Array<{ context: string; line: string; chapter?: number }>;
+    dialogue_examples?: Array<{ context: string; user_message_pattern: string; ideal_response: string; notes?: string }>;
+    state_snapshots?: unknown[];
+  };
+  locked_fields: LockedField[];
+  updated_at: number;
+}
+
+export interface PortalSummaryResult {
+  chapter_number: number;
+  summary: string;
+  locked: boolean;
+  updated_at: number;
+}
+
+export async function portalGetCharacters(workId: string): Promise<PortalCharacterResult[]> {
+  try {
+    const res = await fetch(`${PORTAL_BASE}/works/${workId}/characters`);
+    if (!res.ok) return [];
+    const data = await res.json() as { characters?: PortalCharacterResult[] };
+    return data.characters ?? [];
+  } catch { return []; }
+}
+
+export async function portalGetSummaries(workId: string): Promise<PortalSummaryResult[]> {
+  try {
+    const res = await fetch(`${PORTAL_BASE}/works/${workId}/summaries`);
+    if (!res.ok) return [];
+    const data = await res.json() as { summaries?: PortalSummaryResult[] };
+    return data.summaries ?? [];
+  } catch { return []; }
+}
+
+export async function portalPutCharacters(
+  token: string,
+  workId: string,
+  characters: Array<{
+    slug: string;
+    name: string;
+    data: PortalCharacterResult["data"];
+    locked_fields: LockedField[];
+  }>,
+): Promise<void> {
+  for (const char of characters) {
+    await fetch(`${PORTAL_BASE}/works/${workId}/characters/${char.slug}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: char.name, data: char.data, locked_fields: char.locked_fields }),
+    });
+  }
+}
+
+export async function portalPutSummary(
+  token: string,
+  workId: string,
+  chapterNum: number,
+  summary: string,
+  locked = false,
+): Promise<void> {
+  await fetch(`${PORTAL_BASE}/works/${workId}/summaries/${chapterNum}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ summary, locked }),
+  });
+}
+
 export async function verifyCodeOnKakuyomu(workId: string, code: string): Promise<string | null> {
   try {
     const res = await fetch(`https://kakuyomu.jp/works/${workId}`);
@@ -81,5 +170,33 @@ export async function verifyCodeOnKakuyomu(workId: string, code: string): Promis
     if (intro.includes(code)) return intro.slice(0, 600);
     if (catchphrase.includes(code)) return catchphrase.slice(0, 200);
     return null;
+  } catch { return null; }
+}
+
+export async function verifyCodeOnSyosetu(ncode: string, code: string): Promise<string | null> {
+  try {
+    // Step 1: fetch work TOC page to find synopsis and author userid
+    const tocRes = await fetch(`https://ncode.syosetu.com/${ncode}/`);
+    if (!tocRes.ok) return null;
+    const tocHtml = await tocRes.text();
+
+    // Check synopsis (novel_ex) on TOC page first
+    const synopsisMatch = tocHtml.match(/id="novel_ex"[^>]*>([\s\S]*?)<\/div>/);
+    const synopsis = synopsisMatch ? synopsisMatch[1] : "";
+    if (synopsis.includes(code)) return synopsis.slice(0, 600);
+
+    // Extract userid from mypage link: mypage.syosetu.com/{userid}/
+    const userIdMatch = tocHtml.match(/mypage\.syosetu\.com\/(\d+)\//);
+    if (!userIdMatch) return null;
+    const userId = userIdMatch[1];
+
+    // Step 2: fetch 活動報告 listing for this author
+    const blogRes = await fetch(`https://mypage.syosetu.com/mypageblog/list/userid/${userId}/`);
+    if (!blogRes.ok) return null;
+    const blogHtml = await blogRes.text();
+
+    const idx = blogHtml.indexOf(code);
+    if (idx === -1) return null;
+    return blogHtml.slice(Math.max(0, idx - 50), idx + 600);
   } catch { return null; }
 }

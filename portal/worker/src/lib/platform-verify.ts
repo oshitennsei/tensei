@@ -20,33 +20,35 @@ function extractSnippet(html: string, code: string): string {
 }
 
 export async function verifyOnSyosetu(ncode: string, code: string): Promise<VerifyResult> {
-  // Syosetu work notices: https://ncode.syosetu.com/{ncode}/notice/
-  const noticeListUrl = `https://ncode.syosetu.com/${ncode}/notice/`;
   try {
-    const res = await fetch(noticeListUrl, { headers: FETCH_HEADERS });
-    if (!res.ok) return { found: false, fetchFailed: true, reason: `作者ノートページ取得失敗 (HTTP ${res.status})` };
-    const html = await res.text();
-    if (html.includes(code)) {
-      return { found: true, snapshot: extractSnippet(html, code) };
+    // Step 1: fetch work TOC page to get synopsis and author userid
+    const tocUrl = `https://ncode.syosetu.com/${ncode}/`;
+    const tocRes = await fetch(tocUrl, { headers: FETCH_HEADERS });
+    if (!tocRes.ok) return { found: false, fetchFailed: true, reason: `作品ページ取得失敗 (HTTP ${tocRes.status})` };
+    const tocHtml = await tocRes.text();
+
+    // Check synopsis (novel_ex) first
+    const synopsisMatch = tocHtml.match(/id="novel_ex"[^>]*>([\s\S]*?)<\/div>/);
+    const synopsis = synopsisMatch ? synopsisMatch[1] : "";
+    if (synopsis.includes(code)) {
+      return { found: true, snapshot: extractSnippet(synopsis, code) };
     }
 
-    // If not on listing page, try fetching individual notice pages linked from it
-    const noticeLinks = [...html.matchAll(/href="\/[^"]+\/notice\/(\d+)\/"/g)]
-      .map(m => `https://ncode.syosetu.com/${ncode}/notice/${m[1]}/`)
-      .slice(0, 10); // check the 10 most recent
+    // Step 2: find author userid from mypage link, then check 活動報告
+    const userIdMatch = tocHtml.match(/mypage\.syosetu\.com\/(\d+)\//);
+    if (!userIdMatch) return { found: false, reason: "著者のユーザーIDを取得できません" };
+    const userId = userIdMatch[1];
 
-    for (const url of noticeLinks) {
-      try {
-        const nr = await fetch(url, { headers: FETCH_HEADERS });
-        if (!nr.ok) continue;
-        const nhtml = await nr.text();
-        if (nhtml.includes(code)) {
-          return { found: true, snapshot: extractSnippet(nhtml, code) };
-        }
-      } catch { continue; }
+    const blogUrl = `https://mypage.syosetu.com/mypageblog/list/userid/${userId}/`;
+    const blogRes = await fetch(blogUrl, { headers: FETCH_HEADERS });
+    if (!blogRes.ok) return { found: false, fetchFailed: true, reason: `活動報告ページ取得失敗 (HTTP ${blogRes.status})` };
+    const blogHtml = await blogRes.text();
+
+    if (blogHtml.includes(code)) {
+      return { found: true, snapshot: extractSnippet(blogHtml, code) };
     }
 
-    return { found: false, reason: "コードが作者ノートに見つかりません" };
+    return { found: false, reason: "コードが活動報告・作品紹介に見つかりません" };
   } catch (e) {
     return { found: false, fetchFailed: true, reason: `取得エラー: ${String(e)}` };
   }

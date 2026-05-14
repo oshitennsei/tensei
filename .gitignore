@@ -3,3 +3,13 @@ dist/
 *.local
 .env
 .DS_Store
+
+# AI tool working dirs
+.agent/
+.codex/
+.gemini/
+.opencode/
+
+# Wrangler local state
+.wrangler/
+portal/worker/.wrangler/

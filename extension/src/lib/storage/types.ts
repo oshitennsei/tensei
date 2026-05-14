@@ -21,6 +21,7 @@ export interface Work {
   platform: Platform;
   source_type: SourceType;
   platform_url?: string;              // canonical URL on the source platform
+  portal_work_id?: string;            // portal works.id — set after author registration linkage
   authorization_record_url?: string;
   last_updated: number; // epoch ms
   background_image?: Blob;
@@ -53,6 +54,7 @@ export interface Chapter {
   chunk_ids: string[];
   event_ids?: string[];
   embedding_summary?: Float32Array;
+  author_summary?: string;            // author-provided from portal; shown preferentially over LLM summaries
 }
 
 export interface Scene {
@@ -372,6 +374,13 @@ export interface PerformerSkill {
   background_type: "fictional";
   archetype: string;
   age_range?: string;
+  // Biographical info (auto-generated, user-editable)
+  display_name?: string;      // actor's personal name (language matches UI locale)
+  gender?: string;
+  birthday?: string;
+  height?: string;
+  birthplace?: string;
+  career_background?: string;
   personality_traits: string[];
   speech_patterns: string[];
   off_set_persona: OffSetPersona;
@@ -392,7 +401,10 @@ export interface GeneratedSegment {
   contains_new_actions: boolean;
   user_directed: boolean;
   content: string;
+  segment_type?: "generated" | "user_line";
+  speaker_name?: string; // populated for user_line segments
   debug_prompt?: string;  // system prompt snapshot per beat; only stored when plan_debug_mode is on
+  created_at?: number;
 }
 
 export interface PerformanceSession {
@@ -402,6 +414,7 @@ export interface PerformanceSession {
   template_id: string;
   performer_skill_assignments: Record<string, string>; // character_id → skill_id
   characters_in_scene: string[];
+  user_character_id?: string; // cast mode: which character the user plays
   scene_progress: number;
   improvisation_setting: ImprovSetting;
   cutoff_chapter: number | "unlocked";
@@ -442,6 +455,7 @@ export interface BtsTurn {
   speaker_skill_id: string;
   content: string;
   timestamp: number;
+  turn_type?: "dialogue" | "action";
 }
 
 export interface BtsCrewMember {
@@ -457,6 +471,7 @@ export interface BtsSession {
   present_crew: BtsCrewMember[];
   location: BtsLocation;
   conversation_history: BtsTurn[];
+  character_states?: Record<string, string>; // skill_id -> current activity
   created_at: number;
   last_active: number;
 }

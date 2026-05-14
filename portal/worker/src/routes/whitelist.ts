@@ -15,7 +15,7 @@ whitelist.get("/", async (c) => {
   if (!row || row.status !== "approved") {
     return c.json({ authorized: false });
   }
-  return c.json({ authorized: true, work: { title: row.title, platform: row.platform } });
+  return c.json({ authorized: true, work: { id: row.id, title: row.title, platform: row.platform } });
 });
 
 export { whitelist };

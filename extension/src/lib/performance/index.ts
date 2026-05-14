@@ -199,6 +199,7 @@ export async function createPerformanceSession(
   mode: PerformanceMode,
   cutoff_chapter: number,
   improv: ImprovSetting,
+  user_character_id?: string,
 ): Promise<PerformanceSession> {
   const session: PerformanceSession = {
     id: crypto.randomUUID(),
@@ -207,6 +208,7 @@ export async function createPerformanceSession(
     template_id: "default",
     performer_skill_assignments: {},
     characters_in_scene: character_ids,
+    user_character_id,
     scene_progress: 0,
     improvisation_setting: improv,
     cutoff_chapter,
@@ -402,6 +404,128 @@ async function evaluateScene(
   }
 }
 
+export async function appendUserLine(
+  session_id: string,
+  speaker_name: string,
+  content: string,
+): Promise<void> {
+  await db.performance_sessions.update(session_id, session => {
+    session.generated_content.push({
+      segment_id: crypto.randomUUID(),
+      content,
+      segment_type: "user_line",
+      speaker_name,
+      created_at: Date.now(),
+      // Required GeneratedSegment fields (not semantically meaningful for user lines)
+      type: "scene",
+      canonicity: "extension",
+      source_basis: {},
+      contains_new_dialogue: true,
+      contains_new_actions: false,
+      user_directed: true,
+    });
+    session.last_active = Date.now();
+  });
+}
+
+export async function* generateCastReactions(
+  session: PerformanceSession,
+  signal?: AbortSignal,
+  plan?: ProductionPlan,
+  onDebugPrompt?: (prompt: string) => void,
+): AsyncGenerator<SceneChunk> {
+  const [work, entities, charExts, appSettings] = await Promise.all([
+    db.works.get(session.work_id),
+    db.entities.bulkGet(session.characters_in_scene),
+    db.characters_extended.bulkGet(session.characters_in_scene),
+    db.app_settings.get("global"),
+  ]);
+  const s = getStrings(langFromStorage(appSettings?.ui_language));
+
+  const workTitle = work?.title ?? session.work_id;
+  const systemParts: string[] = [];
+
+  systemParts.push(`${s.work_label}: ${workTitle}`);
+
+  // Characters block
+  const characterLines: string[] = [];
+  for (let i = 0; i < session.characters_in_scene.length; i++) {
+    const entity = entities[i];
+    const charExt = charExts[i];
+    if (!entity) continue;
+    let line = `${entity.canonical_name}: ${entity.description}`;
+    if (charExt?.speech_style) line += `（${s.speech_prefix}${charExt.speech_style}）`;
+    characterLines.push(line);
+  }
+  if (characterLines.length > 0) systemParts.push(characterLines.join("\n"));
+
+  // Cast instruction (user character identity)
+  const userCharEntity = session.user_character_id
+    ? entities.find(e => e?.id === session.user_character_id)
+    : entities[0];
+  const userCharName = userCharEntity?.canonical_name ?? entities[0]?.canonical_name ?? "キャラクター";
+  systemParts.push(s.mode_cast(userCharName));
+
+  // Improv setting
+  switch (session.improvisation_setting) {
+    case "strict":   systemParts.push(s.improv_strict); break;
+    case "moderate": systemParts.push(s.improv_moderate); break;
+    case "free":     systemParts.push(s.improv_free); break;
+  }
+
+  // Beat context from production plan
+  if (plan?.beats.length) {
+    const beatIdx = Math.min(session.scene_progress, plan.beats.length - 1);
+    const beat = plan.beats[beatIdx];
+    if (beat) systemParts.push(s.plan_beat(beatIdx, plan.beats.length, beat.description));
+  }
+
+  systemParts.push(s.output_rules);
+
+  const systemPromptText = systemParts.join("\n\n");
+  if (appSettings?.plan_debug_mode && onDebugPrompt) onDebugPrompt(systemPromptText);
+
+  const messages: ChatMessage[] = [{ role: "system", content: systemPromptText }];
+
+  // Compression-aware history
+  const compressedThrough = session.compressed_through_index ?? -1;
+  if (session.compressed_context) {
+    messages.push({ role: "assistant", content: `${s.compression_context_label}\n${session.compressed_context}` });
+    messages.push({ role: "user", content: s.continue_prompt });
+  }
+
+  // Interleave generated content and user lines into a single history block
+  const recentSegments = session.generated_content.slice(compressedThrough + 1);
+  if (recentSegments.length > 0) {
+    const historyParts = recentSegments.map(seg =>
+      seg.segment_type === "user_line" && seg.speaker_name
+        ? `${seg.speaker_name}: ${seg.content}`
+        : seg.content,
+    );
+    messages.push({ role: "assistant", content: historyParts.join("\n\n---\n\n") });
+  }
+
+  messages.push({ role: "user", content: s.continue_prompt });
+
+  let client = await LlmClient.forRole("scene");
+  if (!client) client = await LlmClient.forRole("main");
+  if (!client) throw new LlmError(0, "LLMが設定されていません。");
+
+  let finalContent = "";
+  try {
+    yield { type: "progress", step: "generating" };
+    for await (const chunk of client.stream(messages, signal)) {
+      if (chunk.delta) {
+        finalContent += chunk.delta;
+        yield { type: "stream", delta: chunk.delta };
+      }
+    }
+    yield { type: "done", content: finalContent };
+  } finally {
+    await db.performance_sessions.update(session.id, { last_active: Date.now() });
+  }
+}
+
 export async function* generateNextScene(
   session: PerformanceSession,
   direction: string,
@@ -450,11 +574,14 @@ export async function* generateNextScene(
   }
 
   // Mode instruction
-  const firstCharacterName = entities[0]?.canonical_name ?? "キャラクター";
+  const userCharEntity = session.user_character_id
+    ? entities.find(e => e?.id === session.user_character_id)
+    : entities[0];
+  const userCharacterName = userCharEntity?.canonical_name ?? entities[0]?.canonical_name ?? "キャラクター";
   switch (session.mode) {
     case "director":     systemParts.push(s.mode_director); break;
     case "screenwriter": systemParts.push(s.mode_screenwriter); break;
-    case "cast":         systemParts.push(s.mode_cast(firstCharacterName)); break;
+    case "cast":         systemParts.push(s.mode_cast(userCharacterName)); break;
     case "hybrid":       systemParts.push(s.mode_hybrid); break;
   }
 

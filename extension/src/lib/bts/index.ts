@@ -1,6 +1,23 @@
 import { LlmClient, LlmError } from "@/lib/llm";
 import { db } from "@/lib/storage";
-import type { BtsCrewMember, BtsLocation, BtsSession, BtsTurn, PerformerSkill, PerformanceSession } from "@/lib/storage";
+import type { BtsCrewMember, BtsLocation, BtsSession, BtsTurn, Entity, PerformerSkill, PerformanceSession } from "@/lib/storage";
+import { getStrings, langFromStorage } from "@/lib/i18n";
+
+export interface BtsGroupTurn {
+  speaker_skill_id: string;
+  speaker_name: string;
+  turn_type: "dialogue" | "action";
+  content: string;
+}
+
+export type BtsStreamChunk =
+  | { event: "turn_done"; turn: BtsGroupTurn }
+  | { event: "all_done" };
+
+export interface SkillWithEntity {
+  skill: PerformerSkill;
+  entity: Entity;
+}
 
 export interface BtsSetup {
   location: BtsLocation;
@@ -12,20 +29,37 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
   const existing = await db.performer_skills.get(character_id);
   if (existing) return existing;
 
-  // 2. Load entity and charExt
-  const [entity, charExt] = await Promise.all([
+  // 2. Load entity, charExt, and UI language
+  const [entity, charExt, appSettings] = await Promise.all([
     db.entities.get(character_id),
     db.characters_extended.get(character_id),
+    db.app_settings.get("global"),
   ]);
 
   const name = entity?.canonical_name ?? character_id;
   const description = entity?.description ?? "";
   const speechStyle = charExt?.speech_style ?? "";
+  const uiLang = langFromStorage(appSettings?.ui_language);
+
+  // Naming convention hint based on UI locale
+  const namingHint: Record<string, string> = {
+    ja:    "日本人俳優として、日本語の姓名（例：山田 太郎）を生成してください。",
+    "zh-tw": "請以台灣或華語演員的角度，生成中文姓名（例：林志玲、陳建州）。",
+    "zh-cn": "请以中国大陆演员的角度，生成中文姓名（例：赵薇、吴京）。",
+    en:    "Generate a Western-style actor name (e.g., James Carter, Emma Walsh).",
+  };
+  const namingInstruction = namingHint[uiLang] ?? namingHint.ja;
 
   // 3. Get LLM client (prefer sub_agent, fallback to main)
   const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
 
   interface GeneratedPersona {
+    display_name?: string;
+    gender?: string;
+    birthday?: string;
+    height?: string;
+    birthplace?: string;
+    career_background?: string;
     archetype?: string;
     personality_traits?: string[];
     speech_patterns?: string[];
@@ -47,21 +81,42 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
 
   if (client) {
     const systemPrompt = [
-      "架空の声優プロフィールをJSONで生成してください。",
-      `キャラクター: ${name}`,
-      `説明: ${description}`,
-      speechStyle ? `話し方: ${speechStyle}` : "",
+      "架空の映画・テレビドラマ俳優のプロフィールをJSONで生成してください。",
+      namingInstruction,
+      `担当キャラクター: ${name}`,
+      `キャラクター説明: ${description}`,
+      speechStyle ? `キャラクターの話し方: ${speechStyle}` : "",
       "",
-      '必須フィールド: {"archetype":"...","personality_traits":[...],"speech_patterns":[...],"off_set_persona":{"casual_style":"...","quirks":[...],"interests":[]},"signature_style":{"acting_method":"...","strengths":[],"notable_techniques":[]},"contrast_with_role_hints":"..."}',
-      "JSONのみ返却。",
-    ].filter(l => l !== undefined).join("\n");
+      "必須フィールド（JSONのみ返却）:",
+      JSON.stringify({
+        display_name: "俳優の実名",
+        gender: "性別（キャラクターと一致させること）",
+        birthday: "生年月日（例: 1992-07-15）",
+        height: "身長（例: 170cm）",
+        birthplace: "出身地",
+        career_background: "経歴・デビュー作・受賞歴など（2〜3文）",
+        archetype: "俳優タイプ（例：個性派、実力派、アイドル系）",
+        personality_traits: ["性格特徴1", "性格特徴2"],
+        speech_patterns: ["話し方の特徴"],
+        off_set_persona: {
+          casual_style: "プライベートの口調",
+          quirks: ["癖1"],
+          interests: ["趣味1", "趣味2"],
+        },
+        signature_style: {
+          acting_method: "演技メソッド",
+          strengths: ["得意なこと"],
+          notable_techniques: ["特技"],
+        },
+        contrast_with_role_hints: "担当キャラとの性格的な違い",
+      }),
+    ].filter(Boolean).join("\n");
 
     try {
       const raw = await client.complete([
         { role: "system", content: systemPrompt },
         { role: "user", content: "生成" },
       ]);
-      // Strip markdown code fences if present
       const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
       persona = JSON.parse(cleaned) as GeneratedPersona;
     } catch {
@@ -73,9 +128,15 @@ export async function getOrCreateSkill(character_id: string, work_id: string): P
   const skill: PerformerSkill = {
     id: character_id,
     source: "ai_generated",
-    name: `${name}役・声優`,
+    name: `${name}役・俳優`,
     background_type: "fictional",
-    archetype: persona.archetype ?? "声優",
+    display_name: persona.display_name,
+    gender: persona.gender,
+    birthday: persona.birthday,
+    height: persona.height,
+    birthplace: persona.birthplace,
+    career_background: persona.career_background,
+    archetype: persona.archetype ?? "俳優",
     personality_traits: persona.personality_traits ?? [],
     speech_patterns: persona.speech_patterns ?? [],
     off_set_persona: {
@@ -219,20 +280,20 @@ export async function* btsChat(
     db.entities.get(target_skill_id),
   ]);
 
+  const appSettings = await db.app_settings.get("global");
+  const s = getStrings(langFromStorage(appSettings?.ui_language));
+
   const characterName = entity?.canonical_name ?? target_skill_id;
   const casualStyle = skill?.off_set_persona?.casual_style ?? "";
   const interests = skill?.off_set_persona?.interests ?? [];
   const quirks = skill?.off_set_persona?.quirks ?? [];
 
-  // 3. Build system prompt
-  const systemContent = [
-    `あなたは架空の声優です。「${characterName}」というキャラクターを演じています。`,
-    "今は収録の合間で楽屋にいます。キャラクターとしてではなく、そのキャラクターを演じた声優として自然に話してください。",
-    "",
-    `口調・話し方: ${casualStyle}`,
-    `趣味・関心: ${interests.join("、")}`,
-    `口癖やクセ: ${quirks.join("、")}`,
-  ].join("\n");
+  // 3. Build system prompt using locale strings
+  const systemParts = [s.bts_sys_intro(characterName), s.bts_sys_context];
+  if (casualStyle) systemParts.push(s.bts_sys_casual(casualStyle));
+  if (interests.length) systemParts.push(s.bts_sys_interests(interests.join("、")));
+  if (quirks.length) systemParts.push(s.bts_sys_quirks(quirks.join("、")));
+  const systemContent = systemParts.join("\n");
 
   // 4. Build message history from last 12 turns
   const history = session.conversation_history.slice(-12).map(turn => ({
@@ -262,6 +323,227 @@ export async function* btsChat(
     // 8. Update last_active
     await db.bts_sessions.update(session.id, { last_active: Date.now() });
   }
+}
+
+// ── Group chat ────────────────────────────────────────────────────────────────
+
+function tryExtractObjects(buffer: string): { turns: BtsGroupTurn[]; remaining: string } {
+  const turns: BtsGroupTurn[] = [];
+  let pos = 0;
+
+  while (pos < buffer.length) {
+    const start = buffer.indexOf("{", pos);
+    if (start === -1) break;
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let i = start;
+
+    for (; i < buffer.length; i++) {
+      const c = buffer[i];
+      if (escape) { escape = false; continue; }
+      if (c === "\\" && inString) { escape = true; continue; }
+      if (c === '"') { inString = !inString; continue; }
+      if (!inString) {
+        if (c === "{") depth++;
+        else if (c === "}") {
+          depth--;
+          if (depth === 0) {
+            try {
+              const raw = JSON.parse(buffer.slice(start, i + 1)) as Record<string, string>;
+              if (raw.speaker && raw.content) {
+                turns.push({
+                  speaker_skill_id: "",
+                  speaker_name: raw.speaker,
+                  turn_type: raw.type === "action" ? "action" : "dialogue",
+                  content: raw.content,
+                });
+              }
+            } catch { /* skip malformed */ }
+            pos = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (depth > 0) return { turns, remaining: buffer.slice(start) };
+  }
+
+  return { turns, remaining: buffer.slice(pos) };
+}
+
+export interface BtsOpeningResult {
+  character_states: Record<string, string>; // skill_id -> current activity
+  opening_turns: BtsTurn[];
+}
+
+export async function generateBtsOpening(
+  session: BtsSession,
+  skills: SkillWithEntity[],
+): Promise<BtsOpeningResult> {
+  if (skills.length === 0) return { character_states: {}, opening_turns: [] };
+
+  const appSettings = await db.app_settings.get("global");
+  const lang = langFromStorage(appSettings?.ui_language);
+
+  const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
+  if (!client) return { character_states: {}, opening_turns: [] };
+
+  const nameToId = new Map(skills.map(({ skill, entity }) => [entity.canonical_name, skill.id]));
+
+  type Locale = "ja" | "zh-tw" | "zh-cn" | "en";
+
+  const locationLabels: Record<BtsLocation, Record<Locale, string>> = {
+    rest_area:    { ja: "楽屋（休憩室）", "zh-tw": "後台休息室", "zh-cn": "后台休息室", en: "green room" },
+    makeup_room:  { ja: "メイクルーム",   "zh-tw": "化妝室",     "zh-cn": "化妆室",     en: "makeup room" },
+    set:          { ja: "撮影セット",     "zh-tw": "攝影棚",     "zh-cn": "摄影棚",     en: "film set" },
+    cafeteria:    { ja: "食堂",           "zh-tw": "餐廳",       "zh-cn": "食堂",       en: "cafeteria" },
+  };
+
+  const langOutputHints: Record<string, string> = {
+    ja:      "statesとopeningのcontentはすべて日本語で出力。",
+    "zh-tw": "states及opening的content全部使用繁體中文輸出。",
+    "zh-cn": "states及opening的content全部使用简体中文输出。",
+    en:      "All states and opening content must be in English.",
+  };
+
+  const locationLabel = (locationLabels[session.location] as Record<string, string>)[lang]
+    ?? locationLabels[session.location].ja;
+  const langHint = langOutputHints[lang] ?? langOutputHints.ja;
+
+  const performerList = skills.map(({ skill, entity }) => {
+    const traits = skill.personality_traits?.slice(0, 2).join("・") ?? "";
+    const casual = skill.off_set_persona?.casual_style ?? "";
+    const quirks = skill.off_set_persona?.quirks?.slice(0, 1).join("") ?? "";
+    return [
+      `名前: ${entity.canonical_name}`,
+      traits ? `性格: ${traits}` : "",
+      casual ? `普段の口調: ${casual}` : "",
+      quirks ? `癖: ${quirks}` : "",
+    ].filter(Boolean).join(" / ");
+  }).join("\n");
+
+  const prompt = [
+    `場所: ${locationLabel}`,
+    `出演者:\n${performerList}`,
+    "",
+    "タスク: ユーザーが楽屋に入ってきた瞬間のシーンを生成してください。",
+    "1. 各出演者の現在の状態（何をしているか）",
+    "2. ユーザーが入ってきた時の自然なリアクション（0〜4ターン）",
+    "   ※全員が挨拶する必要はない。性格によっては無視・会釈のみ・気づかないも可",
+    "",
+    "出力形式（JSONのみ、説明不要）:",
+    JSON.stringify({
+      states: { "演者名A": "短い状態描写（10字以内）", "演者名B": "短い状態描写" },
+      opening: [
+        { speaker: "演者名", type: "action", content: "動作や様子" },
+        { speaker: "演者名", type: "dialogue", content: "セリフ" },
+      ],
+    }),
+    "",
+    `ルール: statesは全演者分必須。openingのtypeは"dialogue"または"action"のみ。${langHint}`,
+  ].join("\n");
+
+  try {
+    const raw = await client.complete([
+      { role: "system", content: prompt },
+      { role: "user", content: "生成" },
+    ]);
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+    interface RawOpening {
+      states?: Record<string, string>;
+      opening?: Array<{ speaker: string; type: string; content: string }>;
+    }
+
+    const parsed = JSON.parse(cleaned) as RawOpening;
+
+    const character_states: Record<string, string> = {};
+    for (const [name, state] of Object.entries(parsed.states ?? {})) {
+      const skillId = nameToId.get(name);
+      if (skillId) character_states[skillId] = String(state);
+    }
+
+    const opening_turns: BtsTurn[] = (parsed.opening ?? []).map(t => ({
+      speaker_skill_id: nameToId.get(t.speaker) ?? t.speaker,
+      content: t.content,
+      timestamp: Date.now(),
+      turn_type: t.type === "action" ? "action" : "dialogue",
+    }));
+
+    return { character_states, opening_turns };
+  } catch {
+    return { character_states: {}, opening_turns: [] };
+  }
+}
+
+export async function* btsGroupChat(
+  session: BtsSession,
+  presentSkills: SkillWithEntity[],
+  user_message: string,
+  signal?: AbortSignal,
+): AsyncGenerator<BtsStreamChunk> {
+  const appSettings = await db.app_settings.get("global");
+  const s = getStrings(langFromStorage(appSettings?.ui_language));
+
+  const nameToId = new Map<string, string>(
+    presentSkills.map(({ skill, entity }) => [entity.canonical_name, skill.id]),
+  );
+
+  const performerDescs = presentSkills.map(({ skill, entity }) => {
+    const state = session.character_states?.[skill.id];
+    const parts: string[] = [`${entity.canonical_name}${state ? `（${state}）` : ""}`];
+    if (skill.off_set_persona?.casual_style) parts.push(`${s.bts_sys_casual(skill.off_set_persona.casual_style)}`);
+    if (skill.off_set_persona?.quirks?.length) parts.push(`${s.bts_sys_quirks(skill.off_set_persona.quirks.join("、"))}`);
+    return `- ${parts.join(" / ")}`;
+  }).join("\n");
+
+  const historyText = session.conversation_history.slice(-20)
+    .filter(turn => turn.speaker_skill_id !== "ambient") // ambient events are scene flavour, not dialogue
+    .map(turn => {
+      const name = turn.speaker_skill_id === "user"
+        ? s.bts_you
+        : turn.speaker_skill_id === "crew"
+        ? s.bts_staff
+        : (presentSkills.find(x => x.skill.id === turn.speaker_skill_id)?.entity.canonical_name ?? turn.speaker_skill_id);
+      const prefix = turn.turn_type === "action" ? `*${turn.content}*` : turn.content;
+      return `[${name}]: ${prefix}`;
+    }).join("\n");
+
+  const systemContent = s.bts_group_system(performerDescs, historyText);
+
+  const client = await LlmClient.forRole("main");
+  if (!client) throw new LlmError(0, "LLMが設定されていません。");
+
+  let buffer = "";
+
+  try {
+    for await (const chunk of client.stream(
+      [{ role: "system" as const, content: systemContent }, { role: "user" as const, content: user_message }],
+      signal,
+    )) {
+      if (!chunk.delta) continue;
+      buffer += chunk.delta;
+      const { turns, remaining } = tryExtractObjects(buffer);
+      buffer = remaining;
+      for (const turn of turns) {
+        turn.speaker_skill_id = nameToId.get(turn.speaker_name) ?? turn.speaker_name;
+        yield { event: "turn_done", turn };
+      }
+    }
+    // flush remaining
+    const { turns } = tryExtractObjects(buffer);
+    for (const turn of turns) {
+      turn.speaker_skill_id = nameToId.get(turn.speaker_name) ?? turn.speaker_name;
+      yield { event: "turn_done", turn };
+    }
+  } finally {
+    await db.bts_sessions.update(session.id, { last_active: Date.now() });
+  }
+
+  yield { event: "all_done" };
 }
 
 export async function appendBtsTurn(session_id: string, turn: BtsTurn): Promise<void> {
@@ -303,7 +585,7 @@ export async function generateCrewInterjection(
     "今の会話の流れ:",
     lastExchange,
     "",
-    "場の雰囲気に合う短い一言を言ってください。1〜2文。キャラクター名や「声優」という言葉は使わないこと。",
+    "場の雰囲気に合う短い一言を言ってください。1〜2文。キャラクター名・役者名・「俳優」「声優」という言葉は使わないこと。",
   ].join("\n");
 
   const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
@@ -320,4 +602,82 @@ export async function generateCrewInterjection(
   }
 
   return `**${member.name}（${member.role}）**: ${response.trim()}`;
+}
+
+// ── Ambient on-set events ─────────────────────────────────────────────────────
+// Very low probability (~5%). Generates a one-line scene description (tea delivery,
+// makeup touch-up, etc.) independent of defined crew members. Stored in history
+// as speaker_skill_id:"ambient" but filtered out of LLM context.
+
+export async function generateAmbientEvent(session: BtsSession): Promise<string | null> {
+  if (Math.random() > 0.05) return null;
+  // Don't fire before the conversation has a few exchanges
+  if (session.conversation_history.filter(t => t.speaker_skill_id === "user").length < 2) return null;
+
+  const appSettings = await db.app_settings.get("global");
+  const lang = langFromStorage(appSettings?.ui_language);
+
+  type Locale = "ja" | "zh-tw" | "zh-cn" | "en";
+  const locationHints: Record<BtsLocation, Record<Locale, string>> = {
+    rest_area: {
+      ja:    "スタッフがお茶や温かい飲み物を差し入れる・軽食を置いていく・遠くでスケジュール確認の声がする・誰かが通り過ぎる",
+      "zh-tw": "工作人員送來熱茶或飲料・放下點心・遠處傳來確認時程的聲音・有人路過",
+      "zh-cn": "工作人员送来热茶或饮料・放下零食・远处传来确认日程的声音・有人路过",
+      en:    "A PA brings hot tea or drinks; someone leaves snacks; a distant voice confirming the schedule; footsteps passing by",
+    },
+    makeup_room: {
+      ja:    "ヘアメイクスタッフが粉を押さえに来る・衣装担当がコスチュームを整える・ドライヤーの音がかすかに聞こえる",
+      "zh-tw": "化妝師過來補粉・服裝師調整戲服・隱約傳來吹風機聲",
+      "zh-cn": "化妆师过来补妆・服装师整理戏服・隐约听到吹风机声",
+      en:    "A makeup artist comes to touch up powder; wardrobe adjusts a costume; the faint sound of a hair dryer",
+    },
+    set: {
+      ja:    "照明スタッフがライトを微調整する・小道具担当が確認に来る・遠くで助監督の声がする・機材の作動音がする",
+      "zh-tw": "燈光師微調燈光・道具師過來確認・遠處傳來副導演的聲音・機器設備的運作聲",
+      "zh-cn": "灯光师微调灯光・道具师过来确认・远处传来副导演的声音・设备运作声",
+      en:    "A lighting tech fine-tunes a light; the prop master checks something; the AD's voice in the distance; equipment hum",
+    },
+    cafeteria: {
+      ja:    "食器の触れ合う音・ケータリングスタッフが料理を補充する・誰かがおかわりを取りに立つ・コーヒーマシンの音",
+      "zh-tw": "餐具碰撞聲・餐飲人員補充食物・有人起身去添菜・咖啡機的聲音",
+      "zh-cn": "餐具碰撞声・餐饮人员补充食物・有人起身去添菜・咖啡机声音",
+      en:    "The clink of cutlery; catering staff refills the food; someone gets up for seconds; the coffee machine gurgling",
+    },
+  };
+
+  const locationLabels: Record<BtsLocation, string> = {
+    makeup_room: "化粧室", set: "撮影セット", rest_area: "休憩室", cafeteria: "食堂",
+  };
+
+  const langHints: Record<string, string> = {
+    ja:    "自然な日本語で一文だけ。",
+    "zh-tw": "請用自然的繁體中文寫一句話。",
+    "zh-cn": "请用自然的简体中文写一句话。",
+    en:    "One natural sentence in English.",
+  };
+
+  const hint = (locationHints[session.location] as Record<string, string>)[lang]
+    ?? locationHints[session.location].ja;
+  const locationLabel = locationLabels[session.location];
+  const langHint = langHints[lang] ?? langHints.ja;
+
+  const prompt = [
+    `${locationLabel}での撮影の合間のひとコマを情景描写してください。`,
+    `起きていそうな出来事（参考）: ${hint}`,
+    "一文のみ。演者名・キャラクター名は使わない。スタッフや音・雰囲気など第三者的な視点で短く描写。",
+    langHint,
+  ].join("\n");
+
+  const client = (await LlmClient.forRole("sub_agent")) ?? (await LlmClient.forRole("main"));
+  if (!client) return null;
+
+  try {
+    const response = await client.complete([
+      { role: "system", content: prompt },
+      { role: "user", content: "描写" },
+    ]);
+    return response.trim();
+  } catch {
+    return null;
+  }
 }

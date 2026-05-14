@@ -65,7 +65,15 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
     setStreaming(true);
 
     abortRef.current = new AbortController();
-    const result = await chat({ session, user_message: userMsg, signal: abortRef.current.signal });
+    let result: Awaited<ReturnType<typeof chat>>;
+    try {
+      result = await chat({ session, user_message: userMsg, signal: abortRef.current.signal });
+    } catch (e: unknown) {
+      const msg = e instanceof LlmError ? e.userMessage : str.chat_error;
+      setMessages(prev => [...prev, { role: "system", content: msg }]);
+      setStreaming(false);
+      return;
+    }
 
     if (!result.ok) {
       setMessages(prev => [...prev, { role: "system", content: result.error.message }]);
@@ -176,6 +184,13 @@ export function ChatScreen({ work, session: initialSession, onBack }: Props) {
       </header>
 
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+        {session.tier_1_paragraph_summaries.length > 0 && (
+          <div className="text-center">
+            <span className="text-xs text-gray-400 bg-gray-100 rounded px-2 py-1">
+              {str.chat_history_compressed}
+            </span>
+          </div>
+        )}
         {messages.length === 0 && !streaming && (
           <p className="text-center text-xs text-gray-400 mt-8">{str.chat_start_prompt(characterName)}</p>
         )}

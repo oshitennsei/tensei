@@ -23,6 +23,8 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
   const [newTag, setNewTag] = useState("");
   const [dragOver, setDragOver] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
+  // Tracks latest beats to avoid stale closure in onBlur handlers
+  const latestBeatsRef = useRef(localPlan.beats);
 
   const FIELD_LABELS: Record<PlanTextField, string> = {
     where: str.field_where,
@@ -52,12 +54,30 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
     const [item] = next.splice(from, 1);
     next.splice(idx, 0, item);
     const renumbered = next.map((b, i) => ({ ...b, order: i + 1 }));
-    persist({ beats: renumbered });
+    latestBeatsRef.current = renumbered;
+    persistBeats(renumbered);
     dragIndexRef.current = null;
   };
   const handleDragEnd = () => { setDragOver(null); dragIndexRef.current = null; };
 
   const textFields: PlanTextField[] = ["where", "when", "what", "why", "how"];
+
+  // When a beat title changes in chapter mode, sync to <<<BEAT N: title>>> markers in segmented_source_text
+  const persistBeats = async (newBeats: typeof localPlan.beats) => {
+    const updates: Partial<ProductionPlan> = { beats: newBeats };
+    if (localPlan.scene_basis === "chapter" && localPlan.segmented_source_text) {
+      let text = localPlan.segmented_source_text;
+      for (const beat of newBeats) {
+        const safeTitle = beat.description.replace(/>/g, "");
+        text = text.replace(
+          new RegExp(`<<<BEAT ${beat.order}: [^>]*>>>`),
+          `<<<BEAT ${beat.order}: ${safeTitle}>>>`,
+        );
+      }
+      updates.segmented_source_text = text;
+    }
+    await persist(updates);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -203,12 +223,37 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
           <>
             {localPlan.beats.length > 0 && (
               <section>
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{str.plan_beats_label}</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{str.plan_beats_label}</p>
+                <p className="text-xs text-gray-400 mb-2">{str.plan_beats_chapter_note}</p>
                 <ol className="space-y-0.5">
                   {localPlan.beats.map((beat, idx) => (
                     <li key={idx} className="flex items-center gap-2 py-1 px-1">
                       <span className="text-xs text-gray-400 w-5 shrink-0">{beat.order}.</span>
-                      <span className="flex-1 text-xs text-gray-700">{beat.description}</span>
+                      {editingBeat === idx ? (
+                        <input
+                          className="flex-1 border border-indigo-400 rounded px-1 py-0.5 text-xs focus:outline-none"
+                          value={beat.description}
+                          onChange={e => {
+                            const newBeats = localPlan.beats.map((b, i) =>
+                              i === idx ? { ...b, description: e.target.value } : b
+                            );
+                            latestBeatsRef.current = newBeats;
+                            setLocalPlan(p => ({ ...p, beats: newBeats }));
+                          }}
+                          onBlur={() => {
+                            persistBeats(latestBeatsRef.current);
+                            setEditingBeat(null);
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <span
+                          className="flex-1 text-xs text-gray-700 cursor-pointer hover:text-indigo-600"
+                          onClick={() => setEditingBeat(idx)}
+                        >
+                          {beat.description || <span className="text-gray-300">{str.plan_empty}</span>}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ol>
@@ -251,10 +296,11 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
                         const newBeats = localPlan.beats.map((b, i) =>
                           i === idx ? { ...b, description: e.target.value } : b
                         );
+                        latestBeatsRef.current = newBeats;
                         setLocalPlan(p => ({ ...p, beats: newBeats }));
                       }}
                       onBlur={() => {
-                        persist({ beats: localPlan.beats });
+                        persistBeats(latestBeatsRef.current);
                         setEditingBeat(null);
                       }}
                       autoFocus
@@ -273,7 +319,8 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
                       const newBeats = localPlan.beats
                         .filter((_, i) => i !== idx)
                         .map((b, i) => ({ ...b, order: i + 1 }));
-                      persist({ beats: newBeats });
+                      latestBeatsRef.current = newBeats;
+                      persistBeats(newBeats);
                     }}
                   >
                     ✕
@@ -283,14 +330,14 @@ export function ProductionPlanScreen({ work: _work, session: _session, plan, onB
             </ul>
             <button
               className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
-              onClick={() =>
-                persist({
-                  beats: [
-                    ...localPlan.beats,
-                    { order: localPlan.beats.length + 1, description: "" },
-                  ],
-                })
-              }
+              onClick={() => {
+                const newBeats = [
+                  ...localPlan.beats,
+                  { order: localPlan.beats.length + 1, description: "" },
+                ];
+                latestBeatsRef.current = newBeats;
+                persistBeats(newBeats);
+              }}
             >
               {str.plan_add_beat}
             </button>

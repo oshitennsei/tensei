@@ -37,7 +37,7 @@ type Screen =
   | { name: "performance"; work: Work; session: PerformanceSession }
   | { name: "bts-brief"; work: Work; performanceSession: PerformanceSession }
   | { name: "bts"; work: Work; performanceSession: PerformanceSession; initialSession?: BtsSession; initialLocation?: BtsLocation; initialCrew?: BtsCrewMember[] }
-  | { name: "work-register" };
+  | { name: "work-register"; initialWorkUrl?: string };
 
 function getWorkId(s: Screen): string | undefined {
   switch (s.name) {
@@ -235,6 +235,7 @@ function AppContent() {
         <IngestScreen
           onBack={() => setScreen({ name: "home" })}
           onDone={(_work, _ch) => setScreen({ name: "home" })}
+          onWorkRegister={(workUrl) => setScreen({ name: "work-register", initialWorkUrl: workUrl })}
         />
       );
     }
@@ -242,7 +243,7 @@ function AppContent() {
       return <DebugScreen onBack={() => setScreen({ name: "settings" })} />;
     }
     if (screen.name === "work-register") {
-      return <WorkRegisterScreen onBack={() => setScreen({ name: "home" })} />;
+      return <WorkRegisterScreen onBack={() => setScreen({ name: "home" })} initialWorkUrl={screen.initialWorkUrl} />;
     }
     return (
       <HomeScreen

@@ -132,6 +132,22 @@ class TenseiDb extends Dexie {
     this.version(11).stores({});  // supplementary_material added to ProductionPlan (no new indexed stores)
 
     this.version(12).stores({});  // segmented_source_text added to ProductionPlan (no new indexed stores)
+
+    this.version(13).stores({});  // portal_work_id on Work, author_summary on Chapter (Phase 6)
+
+    this.version(14).stores({ works: "&id, title, author, platform_url" });  // index platform_url for portal linkage
+
+    this.version(15).stores({ performance_sessions: "&id, work_id, last_active" });  // index work_id so WorkScreen query works
+
+    this.version(16).stores({ bts_sessions: "&id, work_id, last_active" });  // index work_id for listBtsSessions query
+
+    this.version(17).stores({});  // display_name, gender, birthday, height, birthplace, career_background added to PerformerSkill
+
+    this.version(18).stores({});  // character_states added to BtsSession
+
+    this.version(19).stores({});  // user_character_id added to PerformanceSession
+
+    this.version(20).stores({});  // segment_type, speaker_name added to GeneratedSegment
   }
 }
 
