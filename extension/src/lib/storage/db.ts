@@ -144,6 +144,8 @@ class TenseiDb extends Dexie {
     this.version(17).stores({});  // display_name, gender, birthday, height, birthplace, career_background added to PerformerSkill
 
     this.version(18).stores({});  // character_states added to BtsSession
+
+    this.version(19).stores({});  // user_character_id added to PerformanceSession
   }
 }
 

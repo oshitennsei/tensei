@@ -411,6 +411,7 @@ export interface PerformanceSession {
   template_id: string;
   performer_skill_assignments: Record<string, string>; // character_id → skill_id
   characters_in_scene: string[];
+  user_character_id?: string; // cast mode: which character the user plays
   scene_progress: number;
   improvisation_setting: ImprovSetting;
   cutoff_chapter: number | "unlocked";

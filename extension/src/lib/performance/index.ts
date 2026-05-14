@@ -199,6 +199,7 @@ export async function createPerformanceSession(
   mode: PerformanceMode,
   cutoff_chapter: number,
   improv: ImprovSetting,
+  user_character_id?: string,
 ): Promise<PerformanceSession> {
   const session: PerformanceSession = {
     id: crypto.randomUUID(),
@@ -207,6 +208,7 @@ export async function createPerformanceSession(
     template_id: "default",
     performer_skill_assignments: {},
     characters_in_scene: character_ids,
+    user_character_id,
     scene_progress: 0,
     improvisation_setting: improv,
     cutoff_chapter,
@@ -450,11 +452,14 @@ export async function* generateNextScene(
   }
 
   // Mode instruction
-  const firstCharacterName = entities[0]?.canonical_name ?? "キャラクター";
+  const userCharEntity = session.user_character_id
+    ? entities.find(e => e?.id === session.user_character_id)
+    : entities[0];
+  const userCharacterName = userCharEntity?.canonical_name ?? entities[0]?.canonical_name ?? "キャラクター";
   switch (session.mode) {
     case "director":     systemParts.push(s.mode_director); break;
     case "screenwriter": systemParts.push(s.mode_screenwriter); break;
-    case "cast":         systemParts.push(s.mode_cast(firstCharacterName)); break;
+    case "cast":         systemParts.push(s.mode_cast(userCharacterName)); break;
     case "hybrid":       systemParts.push(s.mode_hybrid); break;
   }
 
