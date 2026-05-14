@@ -146,6 +146,8 @@ class TenseiDb extends Dexie {
     this.version(18).stores({});  // character_states added to BtsSession
 
     this.version(19).stores({});  // user_character_id added to PerformanceSession
+
+    this.version(20).stores({});  // segment_type, speaker_name added to GeneratedSegment
   }
 }
 

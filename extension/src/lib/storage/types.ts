@@ -401,7 +401,10 @@ export interface GeneratedSegment {
   contains_new_actions: boolean;
   user_directed: boolean;
   content: string;
+  segment_type?: "generated" | "user_line";
+  speaker_name?: string; // populated for user_line segments
   debug_prompt?: string;  // system prompt snapshot per beat; only stored when plan_debug_mode is on
+  created_at?: number;
 }
 
 export interface PerformanceSession {
