@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "description": "好きな小説のキャラクターと対話できる拡張機能",
   "minimum_chrome_version": "114",
-  "permissions": ["sidePanel", "storage", "alarms", "windows", "scripting", "tabs"],
-  "host_permissions": ["https://raw.githubusercontent.com/*", "<all_urls>"],
+  "permissions": ["sidePanel", "storage", "windows", "scripting", "tabs"],
+  "host_permissions": [
+    "https://kakuyomu.jp/*",
+    "https://ncode.syosetu.com/*",
+    "https://novel18.syosetu.com/*"
+  ],
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
@@ -31,7 +35,12 @@
   "content_scripts": [
     {
       "js": ["src/content/index.ts"],
-      "matches": ["<all_urls>"],
+      "matches": [
+        "https://kakuyomu.jp/*",
+        "https://ncode.syosetu.com/*",
+        "https://novel18.syosetu.com/*",
+        "https://tensei-portal.pages.dev/*"
+      ],
       "run_at": "document_idle"
     }
   ],
