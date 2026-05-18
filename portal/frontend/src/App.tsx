@@ -43,16 +43,40 @@ function Nav() {
   );
 }
 
+function Footer() {
+  return (
+    <footer className="border-t border-gray-800 px-6 py-6 mt-auto">
+      <p className="text-xs text-gray-600 leading-relaxed text-center max-w-2xl mx-auto">
+        本サービスは小説家になろう・カクヨム（株式会社KADOKAWA）等の各プラットフォームの公式サービスとは一切関係ありません。
+        小説の著作権は各著作者に帰属します。AIが生成するキャラクターの発言は原著の内容を保証するものではありません。
+        各プラットフォームの利用規約を遵守した個人利用の範囲内でご利用ください。<br />
+        © 2026 Tensei ·{" "}
+        <a
+          href="https://chakotay-lee.github.io/tensei/privacy-policy.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-gray-500 hover:text-gray-400 underline"
+        >
+          プライバシーポリシー
+        </a>
+      </p>
+    </footer>
+  );
+}
+
 function AppInner() {
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
       <Nav />
-      <Routes>
-        <Route path="/" element={<RegisterPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard" element={<><TokenCatcher /><DashboardPage /></>} />
-        <Route path="/admin" element={<AdminPage />} />
-      </Routes>
+      <div className="flex-1">
+        <Routes>
+          <Route path="/" element={<RegisterPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<><TokenCatcher /><DashboardPage /></>} />
+          <Route path="/admin" element={<AdminPage />} />
+        </Routes>
+      </div>
+      <Footer />
     </div>
   );
 }

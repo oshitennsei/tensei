@@ -51,7 +51,10 @@ export function RegisterPage() {
       <h1 className="text-3xl font-bold mb-2">著者登録</h1>
       <p className="text-gray-400 mb-8 text-sm leading-relaxed">
         Tenseiに公式キャラクター設定を提供するには、著者認証が必要です。
-        小説家になろう・Kakuyomuで作品を公開している著者のみご利用いただけます。
+        小説家になろう・カクヨムで作品を公開している著者のみご利用いただけます。<br />
+        <span className="text-gray-600 text-xs">
+          ※ 本サービスは各プラットフォームの公式サービスとは一切関係ありません。
+        </span>
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
