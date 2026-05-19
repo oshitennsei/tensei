@@ -8,6 +8,9 @@ on:
       - ".github/workflows/deploy-portal.yml"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy-frontend:
     name: Frontend → Cloudflare Pages
@@ -19,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: portal/frontend/package-lock.json
       - run: npm ci
