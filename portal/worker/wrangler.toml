@@ -15,11 +15,8 @@ id = "b32d14d8d1ad4f9ca83fd8fc977900a7"
 [vars]
 FRONTEND_URL = "https://tensei-portal.pages.dev"
 WORKER_URL = "https://tensei-portal-api.tensei-portal.workers.dev"
-GITHUB_REPO_OWNER = "Chakotay-Lee"
-GITHUB_REPO_NAME = "tensei-authors"
 
 # Secrets (set via `wrangler secret put`):
 #   RESEND_API_KEY
 #   SENDER_EMAIL      (verified Resend sender, e.g. noreply@yourdomain.com)
-#   GITHUB_TOKEN
 #   ADMIN_SECRET      (for admin endpoints)

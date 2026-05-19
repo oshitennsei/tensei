@@ -13,12 +13,9 @@ export interface Env {
   MAGIC_LINK_KV: KVNamespace;
   RESEND_API_KEY: string;
   SENDER_EMAIL?: string;
-  GITHUB_TOKEN: string;
   ADMIN_SECRET: string;
   FRONTEND_URL: string;
   WORKER_URL: string;
-  GITHUB_REPO_OWNER: string;
-  GITHUB_REPO_NAME: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
