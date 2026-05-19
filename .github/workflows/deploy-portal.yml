@@ -6,6 +6,7 @@ on:
     paths:
       - "portal/frontend/**"
       - ".github/workflows/deploy-portal.yml"
+  workflow_dispatch:
 
 jobs:
   deploy-frontend:
