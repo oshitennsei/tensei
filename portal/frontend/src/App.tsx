@@ -52,7 +52,7 @@ function Footer() {
         各プラットフォームの利用規約を遵守した個人利用の範囲内でご利用ください。<br />
         © 2026 Tensei ·{" "}
         <a
-          href="https://chakotay-lee.github.io/tensei/privacy-policy.html"
+          href="https://oshitennsei.github.io/tensei/privacy-policy.html"
           target="_blank"
           rel="noopener noreferrer"
           className="text-gray-500 hover:text-gray-400 underline"
