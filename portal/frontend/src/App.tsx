@@ -6,6 +6,7 @@ import { RegisterPage } from "./pages/Register";
 import { LoginPage } from "./pages/Login";
 import { DashboardPage } from "./pages/Dashboard";
 import { AdminPage } from "./pages/Admin";
+import { GuidePage } from "./pages/Guide";
 
 // Handles ?token= redirect from magic link verify
 function TokenCatcher() {
@@ -29,6 +30,7 @@ function Nav() {
   return (
     <nav className="border-b border-gray-800 px-6 py-4 flex items-center gap-4">
       <a href="/" className="text-lg font-semibold text-indigo-400 hover:text-indigo-300">転生 著者ポータル</a>
+      <a href="/guide" className="text-sm text-yellow-400 hover:text-yellow-300">転生学校 🎓</a>
       <span className="flex-1" />
       {author ? (
         <div className="flex items-center gap-4">
@@ -83,8 +85,13 @@ function AppInner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <Routes>
+      <Route path="/guide" element={<GuidePage />} />
+      <Route path="/*" element={
+        <AuthProvider>
+          <AppInner />
+        </AuthProvider>
+      } />
+    </Routes>
   );
 }
