@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
+import { HomePage } from "./pages/Home";
 import { RegisterPage } from "./pages/Register";
 import { LoginPage } from "./pages/Login";
 import { DashboardPage } from "./pages/Dashboard";
@@ -29,8 +30,9 @@ function Nav() {
   const { author, logout } = useAuth();
   return (
     <nav className="border-b border-gray-800 px-6 py-4 flex items-center gap-4">
-      <a href="/" className="text-lg font-semibold text-indigo-400 hover:text-indigo-300">転生 著者ポータル</a>
+      <a href="/" className="text-lg font-semibold text-indigo-400 hover:text-indigo-300">転生</a>
       <a href="/guide" className="text-sm text-yellow-400 hover:text-yellow-300">転生学校 🎓</a>
+      <a href="/app" className="text-sm text-gray-400 hover:text-gray-200">アプリ</a>
       <span className="flex-1" />
       {author ? (
         <div className="flex items-center gap-4">
@@ -72,7 +74,8 @@ function AppInner() {
       <Nav />
       <div className="flex-1">
         <Routes>
-          <Route path="/" element={<RegisterPage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/dashboard" element={<><TokenCatcher /><DashboardPage /></>} />
           <Route path="/admin" element={<AdminPage />} />

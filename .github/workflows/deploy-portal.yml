@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "portal/frontend/**"
+      - "extension/src/**"
+      - "extension/vite.web.config.ts"
       - ".github/workflows/deploy-portal.yml"
   workflow_dispatch:
 
@@ -15,18 +17,30 @@ jobs:
   deploy-frontend:
     name: Frontend → Cloudflare Pages
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: portal/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: portal/frontend/package-lock.json
-      - run: npm ci
-      - run: npm run build
+          cache-dependency-path: |
+            portal/frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install extension deps
+        run: npm ci
+        working-directory: extension
+      - name: Build PWA
+        run: npx vite build --config vite.web.config.ts
+        working-directory: extension
+      - name: Install portal deps
+        run: npm ci
+        working-directory: portal/frontend
+      - name: Build portal
+        run: npm run build
+        working-directory: portal/frontend
+      - name: Copy PWA into portal dist
+        run: mkdir -p dist/app && cp -r ../../extension/dist-web/. dist/app/
+        working-directory: portal/frontend
       - name: Deploy to Cloudflare Pages
         working-directory: portal/frontend
         env:

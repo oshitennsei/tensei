@@ -5,6 +5,7 @@ import pkg from "./package.json";
 
 export default defineConfig({
   root: path.resolve(__dirname, "src/sidebar"),
+  base: "/app/",
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -16,6 +17,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    allowedHosts: ["tensei.alexlee.ccwu.cc"],
   },
   build: {
     outDir: path.resolve(__dirname, "dist-web"),
