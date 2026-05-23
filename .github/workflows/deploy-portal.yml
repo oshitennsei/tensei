@@ -27,7 +27,7 @@ jobs:
             portal/frontend/package-lock.json
             extension/package-lock.json
       - name: Install extension deps
-        run: npm ci
+        run: npm install
         working-directory: extension
       - name: Build PWA
         run: npx vite build --config vite.web.config.ts
