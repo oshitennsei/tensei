@@ -1,5 +1,5 @@
 import { db } from "@/lib/storage";
-import defaultBgPng from "@/assets/default-bg.png";
+import defaultBgPng from "@/assets/default-bg.webp";
 
 export const DEFAULT_BG = `url(${defaultBgPng}) center/cover no-repeat`;
 
