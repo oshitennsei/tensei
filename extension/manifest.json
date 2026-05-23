@@ -32,6 +32,12 @@
   "side_panel": {
     "default_path": "src/sidebar/index.html"
   },
+  "externally_connectable": {
+    "matches": [
+      "https://tensei-portal.pages.dev/*",
+      "https://tensei.alexlee.ccwu.cc/*"
+    ]
+  },
   "content_scripts": [
     {
       "js": ["src/content/index.ts"],
@@ -39,7 +45,8 @@
         "https://kakuyomu.jp/*",
         "https://ncode.syosetu.com/*",
         "https://novel18.syosetu.com/*",
-        "https://tensei-portal.pages.dev/*"
+        "https://tensei-portal.pages.dev/*",
+        "https://tensei.alexlee.ccwu.cc/*"
       ],
       "run_at": "document_idle"
     }

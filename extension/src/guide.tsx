@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { db } from "@/lib/storage";
+import { saveModel, setRoleAssignment } from "@/lib/llm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,19 +41,11 @@ const T = {
       testOk: "✅ 認証成功！",
       testFail: "❌ 認証失敗。キーを確認してください。",
       modelSuggestion: "おすすめモデル:",
-      copyBtn: "キーをコピー",
-      copied: "コピーしました！",
-      copyHint: "コピーしたら、Tensei の設定画面で「＋ モデルを追加」して貼り付けてください。",
+      saveBtn: "設定に保存して次へ",
+      saving: "保存中...",
+      saved: "✅ 設定に保存しました！設定画面へ移動します...",
       multiKeyTip: "💡 複数のキーを設定しておくと、残量切れ時に切り替えられます。",
       noCorsHint: "⚠️ NIM はブラウザからの直接テストができません。キーを入力してそのまま保存できます。",
-      extFound: "🔌 拡張機能を検出 — 自動で拡張機能に保存します",
-      extSaveBtn: "拡張機能に保存",
-      extSaving: "拡張機能に保存中...",
-      extSaved: "✅ 拡張機能に保存しました！設定画面が開きます。",
-      pwaFound: "💾 ブラウザに保存します（拡張機能なし）",
-      pwaSaveBtn: "ブラウザに保存",
-      pwaSaving: "保存中...",
-      pwaSaved: "✅ 保存しました！引き続き学習を進めましょう。",
       cities: [
         {
           dir: "東",
@@ -93,19 +87,19 @@ const T = {
           ],
         },
       ],
-      complete: "🎉 APIキーを取得しました！次の街へ進もう。",
+      complete: "🎉 APIキーを設定しました！次の街へ進もう。",
     },
     s2: {
       badge: "初めての街",
-      mascot: "世界に入るには扉が必要です。あなたの旅のスタイルに合った扉を選びましょう。教材として《呪甲》を使います。",
-      novelName: "呪甲",
+      mascot: "世界に入るには扉が必要です。あなたの旅のスタイルに合った扉を選びましょう。教材として《咒甲》を使います。",
+      novelName: "咒甲",
       novelAuthor: "Alex Lee 著 — カクヨム",
       tabs: [
         {
           name: "Chrome 拡張機能版",
           icon: "🧩",
           steps: [
-            "カクヨム で《呪甲》のページを開く",
+            "カクヨム で《咒甲》のページを開く",
             "ブラウザ右上の 転生アイコン をクリック",
             "サイドバーで「＋ 匯入」をクリック",
             "導入したいエピソードにチェック",
@@ -118,22 +112,22 @@ const T = {
           steps: [
             "Tensei Web 版を開く",
             "「＋ 匯入」をクリック",
-            "《呪甲》の URL を貼り付ける",
+            "《咒甲》の URL を貼り付ける",
             "エピソードを選択",
             "「導入開始」を押す",
           ],
         },
       ],
-      complete: "🌆 《呪甲》の世界に到着しました！",
+      complete: "🌆 《咒甲》の世界に到着しました！",
     },
     s3: {
       badge: "仲間との出会い",
       mascot: "世界の住人があなたを待っています。話しかけてみましょう。",
       steps: ["作品カードをクリック", "キャラクターを選ぶ", "メッセージを入力して送信"],
       demoUser: "あなた",
-      demoChar: "（《呪甲》のキャラクター）",
+      demoChar: "（《咒甲》のキャラクター）",
       demoQ: "こんにちは。あなたは何者ですか？",
-      demoA: "……この呪甲が、見知らぬ者に語りかけられるとは。貴様、よほど度胸があるか、それとも世界の理を知らぬのか。",
+      demoA: "……この咒甲が、見知らぬ者に語りかけられるとは。貴様、よほど度胸があるか、それとも世界の理を知らぬのか。",
       tips: [
         "💡 コンテキストを多めに設定すると、より深い返答が得られます",
         "💡 キャラクター設定画面で性格を微調整できます",
@@ -202,19 +196,11 @@ const T = {
       testOk: "✅ 驗證成功！",
       testFail: "❌ 驗證失敗。請確認 Key 是否正確。",
       modelSuggestion: "推薦模型:",
-      copyBtn: "複製 Key",
-      copied: "已複製！",
-      copyHint: "複製後，在 Tensei 設定畫面點「＋ 新增模型」貼上即可。",
+      saveBtn: "儲存到設定並繼續",
+      saving: "儲存中...",
+      saved: "✅ 已儲存！正在前往設定畫面...",
       multiKeyTip: "💡 可以設定多個 Key，Token 用完時自動切換。",
       noCorsHint: "⚠️ NIM 不支援從瀏覽器直接測試。請直接輸入 Key 並儲存，在 Tensei 中使用時會自動驗證。",
-      extFound: "🔌 已偵測到擴充功能 — 將自動儲存到擴充功能",
-      extSaveBtn: "儲存到擴充功能",
-      extSaving: "儲存到擴充功能中...",
-      extSaved: "✅ 已儲存到擴充功能！設定畫面即將開啟。",
-      pwaFound: "💾 將儲存到瀏覽器（未安裝擴充功能）",
-      pwaSaveBtn: "儲存到瀏覽器",
-      pwaSaving: "儲存中...",
-      pwaSaved: "✅ 已儲存！繼續學習吧。",
       cities: [
         {
           dir: "東",
@@ -256,7 +242,7 @@ const T = {
           ],
         },
       ],
-      complete: "🎉 已取得 API Key！前往下一個城鎮。",
+      complete: "🎉 已設定 API Key！前往下一個城鎮。",
     },
     s2: {
       badge: "初入城鎮",
@@ -360,25 +346,17 @@ const T = {
       testOk: "✅ 验证成功！",
       testFail: "❌ 验证失败。请确认 Key 是否正确。",
       modelSuggestion: "推荐模型:",
-      copyBtn: "复制 Key",
-      copied: "已复制！",
-      copyHint: "复制后，在 Tensei 设置界面点「＋ 添加模型」粘贴即可。",
+      saveBtn: "保存到设置并继续",
+      saving: "保存中...",
+      saved: "✅ 已保存！正在前往设置界面...",
       multiKeyTip: "💡 可以设置多个 Key，Token 用完时自动切换。",
       noCorsHint: "⚠️ NIM 不支持从浏览器直接测试。请直接输入 Key 并保存，在 Tensei 中使用时会自动验证。",
-      extFound: "🔌 已检测到扩展程序 — 将自动保存到扩展程序",
-      extSaveBtn: "保存到扩展程序",
-      extSaving: "保存到扩展程序中...",
-      extSaved: "✅ 已保存到扩展程序！设置界面即将打开。",
-      pwaFound: "💾 将保存到浏览器（未安装扩展程序）",
-      pwaSaveBtn: "保存到浏览器",
-      pwaSaving: "保存中...",
-      pwaSaved: "✅ 已保存！继续学习吧。",
       cities: [
         { dir: "东", name: "OpenRouter", sub: "商人之城 — 多条路线，新手推荐", badge: "✨ 新手推荐", color: "#22c55e", steps: ["打开 openrouter.ai", "Sign up → 用 Google 或 Email 注册", "Keys → Create Key → 输入名称", "复制 Key（以 sk-or-v1-... 开头）"] },
         { dir: "南", name: "Google AI Studio", sub: "学者圣殿 — 有 Google 账号即可免费使用", badge: "🆓 完全免费", color: "#6366f1", steps: ["打开 aistudio.google.com", "用 Google 账号登录", "「Get API key」→「Create API key」", "复制 Key（以 AIza... 开头）"] },
         { dir: "北", name: "NVIDIA NIM", sub: "武人要塞 — 强大但适合进阶用户", badge: "⚔️ 进阶用户", color: "#d4af37", steps: ["打开 build.nvidia.com", "用 NVIDIA 账号注册", "Get API Key → Generate Key", "复制 Key（以 nvapi-... 开头）"] },
       ],
-      complete: "🎉 已获取 API Key！前往下一个城镇。",
+      complete: "🎉 已设置 API Key！前往下一个城镇。",
     },
     s2: {
       badge: "初入城镇",
@@ -422,38 +400,30 @@ const T = {
       testOk: "✅ Key verified!",
       testFail: "❌ Verification failed. Please check your key.",
       modelSuggestion: "Suggested model:",
-      copyBtn: "Copy Key",
-      copied: "Copied!",
-      copyHint: "After copying, open Tensei Settings → Add Model and paste it there.",
+      saveBtn: "Save to Settings & Continue",
+      saving: "Saving...",
+      saved: "✅ Saved! Going to settings...",
       multiKeyTip: "💡 You can add multiple keys and switch when one runs out of tokens.",
       noCorsHint: "⚠️ NIM blocks direct browser requests. Paste your key and save directly — it will be validated when Tensei first uses it.",
-      extFound: "🔌 Extension detected — will save directly to extension",
-      extSaveBtn: "Save to Extension",
-      extSaving: "Saving to extension...",
-      extSaved: "✅ Saved to extension! Settings panel opening.",
-      pwaFound: "💾 Will save to browser storage (no extension installed)",
-      pwaSaveBtn: "Save to Browser",
-      pwaSaving: "Saving...",
-      pwaSaved: "✅ Saved! Continue your journey.",
       cities: [
         { dir: "E", name: "OpenRouter", sub: "Merchant's City — Many routes, recommended for beginners", badge: "✨ Beginner Pick", color: "#22c55e", steps: ["Open openrouter.ai", "Sign up with Google or Email", "Keys → Create Key → Enter a name", "Copy key (starts with sk-or-v1-...)"] },
         { dir: "S", name: "Google AI Studio", sub: "Scholar's Sanctum — Free with a Google account", badge: "🆓 Totally Free", color: "#6366f1", steps: ["Open aistudio.google.com", "Sign in with Google", "Get API key → Create API key", "Copy key (starts with AIza...)"] },
         { dir: "N", name: "NVIDIA NIM", sub: "Warrior's Fortress — Powerful, for advanced users", badge: "⚔️ Advanced", color: "#d4af37", steps: ["Open build.nvidia.com", "Register NVIDIA account", "Get API Key → Generate Key", "Copy key (starts with nvapi-...)"] },
       ],
-      complete: "🎉 API Key obtained! Proceed to the next town.",
+      complete: "🎉 API Key saved! Proceed to the next town.",
     },
     s2: {
       badge: "New Town",
-      mascot: "You need a gate to enter the world. Choose the one that fits your style. We'll use 《呪甲》 as our tutorial novel.",
-      novelName: "呪甲 (Jukou)",
+      mascot: "You need a gate to enter the world. Choose the one that fits your style. We'll use 《咒甲》 as our tutorial novel.",
+      novelName: "咒甲 (Jukou)",
       novelAuthor: "by Alex Lee — Kakuyomu",
       tabs: [
-        { name: "Chrome Extension", icon: "🧩", steps: ["Open 呪甲 on Kakuyomu", "Click the Tensei icon in your browser toolbar", "Click「＋ Import」in the sidebar", "Check episodes to import", "Press「Start Import」"] },
-        { name: "Web Version (PWA)", icon: "🌐", steps: ["Open Tensei Web", "Click「＋ Import」", "Paste the 呪甲 URL", "Select episodes", "Press「Start Import」"] },
+        { name: "Chrome Extension", icon: "🧩", steps: ["Open 咒甲 on Kakuyomu", "Click the Tensei icon in your browser toolbar", "Click「＋ Import」in the sidebar", "Check episodes to import", "Press「Start Import」"] },
+        { name: "Web Version (PWA)", icon: "🌐", steps: ["Open Tensei Web", "Click「＋ Import」", "Paste the 咒甲 URL", "Select episodes", "Press「Start Import」"] },
       ],
-      complete: "🌆 You've arrived in the world of 呪甲!",
+      complete: "🌆 You've arrived in the world of 咒甲!",
     },
-    s3: { badge: "Meeting Allies", mascot: "The world's inhabitants are waiting. Go talk to them.", steps: ["Click a work card", "Choose a character", "Type a message and send"], demoUser: "You", demoChar: "(Character from 呪甲)", demoQ: "Hello. Who are you?", demoA: "…That a stranger would address this Jukou. Either you're remarkably bold, or you know nothing of this world's laws.", tips: ["💡 More context = deeper, more accurate responses", "💡 Fine-tune personality in the character settings screen", "💡 Natural language gets natural responses"], complete: "🤝 Connection made with the world's residents!" },
+    s3: { badge: "Meeting Allies", mascot: "The world's inhabitants are waiting. Go talk to them.", steps: ["Click a work card", "Choose a character", "Type a message and send"], demoUser: "You", demoChar: "(Character from 咒甲)", demoQ: "Hello. Who are you?", demoA: "…That a stranger would address this Jukou. Either you're remarkably bold, or you know nothing of this world's laws.", tips: ["💡 More context = deeper, more accurate responses", "💡 Fine-tune personality in the character settings screen", "💡 Natural language gets natural responses"], complete: "🤝 Connection made with the world's residents!" },
     s4: { badge: "True Adventure", mascot: "The mark of an advanced adventurer. Control multiple characters and play out your own story.", cards: [{ icon: "🎭", title: "Set Up a Cast", body: "Add multiple characters to your cast. Define each one's role in the scene." }, { icon: "🎬", title: "Define the Scene", body: "Set where and what's happening. Characters act according to the world's logic." }, { icon: "✏️", title: "Join the Story", body: "Observe as a reader, or step in as a character yourself." }], complete: "🌟 Performance mode entered!" },
     s5: { badge: "Legendary", mascot: "Your journey reaches its final chapter. But this isn't an ending — it's a new beginning.", steps: [{ icon: "📝", title: "Write Your Own Story", body: "You've enjoyed stories as a reader. Now it's your turn to create a world." }, { icon: "🌟", title: "Register as an Author", body: "Writing on Kakuyomu or Syosetu? Apply to join the Author Portal." }, { icon: "🌍", title: "Share Your World with Tensei", body: "Let readers converse with your characters and bring your world to life." }], cta: "Author Portal →", ctaUrl: "/register", epilogue: "The world of Tensei grows with you in it." },
     footer: { install: "Install Extension", pwa: "Open Web Version", portal: "Author Portal", github: "GitHub" },
@@ -729,7 +699,6 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
   const [testState, setTestState] = useState<TestState>("idle");
   const [testMsg, setTestMsg] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const extId = document.documentElement.getAttribute("data-tensei-ext-id");
   const s = t.s1;
 
   function handleSelectCity(i: number) {
@@ -772,30 +741,26 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (selected === null || !apiKey.trim()) return;
     const provider = PROVIDER_CONFIG[selected];
-    const model = {
-      name: provider.modelLabel,
-      endpoint_url: provider.endpoint,
-      api_key: apiKey.trim(),
-      model_name: provider.defaultModel,
-    };
     setSaveState("saving");
-
-    if (extId && (window as unknown as { chrome?: { runtime?: { sendMessage?: unknown } } }).chrome?.runtime?.sendMessage) {
-      // Case 1: extension installed — send via externally_connectable
-      (window as unknown as { chrome: { runtime: { sendMessage: (id: string, msg: unknown, cb: (r: unknown) => void) => void } } })
-        .chrome.runtime.sendMessage(extId, { type: "SAVE_MODEL", model }, () => {
-          setSaveState("done");
-        });
-    } else {
-      // Case 2: no extension — save to localStorage
-      try {
-        const existing = JSON.parse(localStorage.getItem("tensei_pending_model") ?? "null");
-        if (!existing) localStorage.setItem("tensei_pending_model", JSON.stringify(model));
-      } catch { /* ignore */ }
+    try {
+      await db.open();
+      const id = await saveModel({
+        name: provider.modelLabel,
+        endpoint_url: provider.endpoint,
+        api_key: apiKey.trim(),
+        model_name: provider.defaultModel,
+      });
+      for (const role of ["main", "sub_agent", "compression", "plan", "scene"] as const) {
+        await setRoleAssignment(role, id);
+      }
       setSaveState("done");
+      setTimeout(() => { window.location.href = "/?goto=settings"; }, 1400);
+    } catch (e) {
+      setSaveState("idle");
+      setTestMsg(String(e).slice(0, 150));
     }
   }
 
@@ -841,10 +806,10 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
         ))}
       </div>
 
-      {/* Interactive panel */}
+      {/* Interactive panel for selected city */}
       {selected !== null && city && provider && (
         <RpgCard className="mb-6 space-y-5" delay={0}>
-          {/* Header + signup button */}
+          {/* Header row: city name + signup button */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="font-semibold text-sm" style={{ color: "#d4af37" }}>{city.name}</div>
             <a
@@ -873,14 +838,8 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
             ))}
           </ol>
 
+          {/* Divider */}
           <div style={{ borderTop: "1px solid rgba(212,175,55,0.15)" }} />
-
-          {/* NIM: no-CORS warning */}
-          {provider.noCors && (
-            <div className="text-xs px-3 py-2 rounded" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24" }}>
-              {s.noCorsHint}
-            </div>
-          )}
 
           {/* Key format hint */}
           <div className="text-xs" style={{ color: "#6b7280" }}>
@@ -890,7 +849,14 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
             </code>
           </div>
 
-          {/* Key input + test */}
+          {/* NIM: no-CORS warning */}
+          {provider.noCors && (
+            <div className="text-xs px-3 py-2 rounded" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24" }}>
+              {s.noCorsHint}
+            </div>
+          )}
+
+          {/* Key input + test button */}
           <div className="flex gap-2">
             <input
               type="password"
@@ -932,7 +898,7 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
             </div>
           )}
 
-          {/* Save button — shown after test OK, or immediately for noCors */}
+          {/* Save button — shown after test OK, or immediately for noCors providers */}
           {showSave && (
             <div className="space-y-2">
               <div className="text-xs" style={{ color: "#6b7280" }}>
@@ -941,10 +907,6 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
                   {provider.defaultModel}
                 </code>
                 {" "}— {provider.modelLabel}
-              </div>
-              {/* Ext / no-ext hint */}
-              <div className="text-xs px-2 py-1.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6b7280" }}>
-                {extId ? s.extFound : s.pwaFound}
               </div>
               <button
                 onClick={handleSave}
@@ -957,20 +919,17 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
                   cursor: saveState === "idle" ? "pointer" : "default",
                 }}
               >
-                {(saveState as SaveState) === "saving"
-                  ? (extId ? s.extSaving : s.pwaSaving)
-                  : (saveState as SaveState) === "done"
-                  ? (extId ? s.extSaved : s.pwaSaved)
-                  : (extId ? s.extSaveBtn : s.pwaSaveBtn)}
+                {(saveState as SaveState) === "saving" ? s.saving : (saveState as SaveState) === "done" ? s.saved : s.saveBtn}
               </button>
             </div>
           )}
 
+          {/* Multi-key tip */}
           <div className="text-xs" style={{ color: "#4b5563" }}>{s.multiKeyTip}</div>
         </RpgCard>
       )}
 
-      {(saveState as SaveState) === "done" && (
+      {saveState === "done" && (
         <div className="text-center text-sm" style={{ color: "#86efac" }}>{s.complete}</div>
       )}
     </section>
@@ -989,12 +948,12 @@ function Section2({ t, active }: { t: typeof T["ja"]; active: boolean }) {
 
       {/* Novel badge */}
       <RpgCard className="mb-6 flex items-center gap-4">
-        <div className="w-10 h-10 rounded flex items-center justify-center text-xl" style={{ background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.3)" }}>
+        <div className="w-10 h-10 rounded flex items-center justify-center text-xl flex-shrink-0" style={{ background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.3)" }}>
           📚
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="font-bold text-white">{s.novelName}</div>
-          <div className="text-xs" style={{ color: "#9ca3af" }}>{s.novelAuthor}</div>
+          <div className="text-xs mb-1" style={{ color: "#9ca3af" }}>{s.novelAuthor}</div>
           <a
             href="https://kakuyomu.jp/works/2912051596077215753"
             target="_blank"

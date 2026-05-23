@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  getPortalSession, clearPortalSession, portalLogin, portalMe, portalRequestCode,
+  getPortalSession, setPortalSession, clearPortalSession, portalLogin, portalMe, portalRequestCode,
   portalRegisterWork, verifyCodeOnKakuyomu, verifyCodeOnSyosetu, type PortalAuthor,
 } from "@/lib/portal";
 import { parseSyosetsuWorkUrl, isSyosetsuChapterPage } from "@/lib/platform/syosetu";
@@ -65,14 +65,15 @@ export function WorkRegisterScreen({ onBack, initialWorkUrl }: { onBack: () => v
 
   useEffect(() => {
     loadSession().catch(() => {});
-    if (!initialWorkUrl) {
+    if (!initialWorkUrl && typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
         setTabUrl(tabs[0]?.url ?? "");
       });
     }
+    if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
     const handler = (msg: { type: string; token?: string }) => {
       if (msg.type === "PORTAL_AUTH_SUCCESS" && msg.token) {
-        chrome.storage.local.set({ portal_session_token: msg.token });
+        setPortalSession(msg.token);
         setSession(msg.token);
         portalMe(msg.token).then(me => { if (me) setAuthor(me); }).catch(() => {});
         setStep("idle");
@@ -250,11 +251,24 @@ export function WorkRegisterScreen({ onBack, initialWorkUrl }: { onBack: () => v
                 ))}
               </div>
             )}
-            <div className="text-center py-6 space-y-1">
-              <p className="text-sm text-gray-500">{str.wr_open_work_page}</p>
-              <p className="text-xs text-gray-400">{str.wr_open_work_page_hint}</p>
-              <p className="text-xs text-gray-400">kakuyomu.jp/works/... · ncode.syosetu.com/n...</p>
-            </div>
+            {typeof chrome !== "undefined" && chrome.tabs ? (
+              <div className="text-center py-6 space-y-1">
+                <p className="text-sm text-gray-500">{str.wr_open_work_page}</p>
+                <p className="text-xs text-gray-400">{str.wr_open_work_page_hint}</p>
+                <p className="text-xs text-gray-400">kakuyomu.jp/works/... · ncode.syosetu.com/n...</p>
+              </div>
+            ) : (
+              <div className="space-y-2 py-4">
+                <p className="text-xs text-gray-500">{str.wr_open_work_page_hint}</p>
+                <input
+                  type="url"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  placeholder="https://kakuyomu.jp/works/... or https://ncode.syosetu.com/n..."
+                  value={tabUrl}
+                  onChange={e => setTabUrl(e.target.value)}
+                />
+              </div>
+            )}
           </>
 
         ) : step === "done" ? (

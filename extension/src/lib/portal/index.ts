@@ -10,13 +10,27 @@ export interface PortalAuthor {
 export const PORTAL_SESSION_KEY = "portal_session_token";
 
 export async function getPortalSession(): Promise<string | null> {
-  return new Promise(resolve => {
-    chrome.storage.local.get(PORTAL_SESSION_KEY, r => resolve(r[PORTAL_SESSION_KEY] ?? null));
-  });
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    return new Promise(resolve => {
+      chrome.storage.local.get(PORTAL_SESSION_KEY, r => resolve(r[PORTAL_SESSION_KEY] ?? null));
+    });
+  }
+  return localStorage.getItem(PORTAL_SESSION_KEY);
 }
 
 export async function clearPortalSession(): Promise<void> {
-  return new Promise(resolve => chrome.storage.local.remove(PORTAL_SESSION_KEY, resolve));
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    return new Promise(resolve => chrome.storage.local.remove(PORTAL_SESSION_KEY, resolve));
+  }
+  localStorage.removeItem(PORTAL_SESSION_KEY);
+}
+
+export function setPortalSession(token: string): void {
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    chrome.storage.local.set({ [PORTAL_SESSION_KEY]: token });
+  } else {
+    localStorage.setItem(PORTAL_SESSION_KEY, token);
+  }
 }
 
 export async function portalLogin(email: string): Promise<void> {

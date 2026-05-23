@@ -239,6 +239,8 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
       detectPlatformRef.current?.(url, tabId)?.catch(() => {});
     };
 
+    if (typeof chrome === "undefined" || !chrome.tabs) return;
+
     // Run on mount
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
       if (tab?.url && tab.id != null) runDetection(tab.url, tab.id);

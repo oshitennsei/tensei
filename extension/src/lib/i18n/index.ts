@@ -274,6 +274,13 @@ const JA = {
 
   home_empty: "作品がまだありません。",
   home_cta: "テキストを取り込む",
+  home_guide_btn: "転生学校 🎓",
+  welcome_title: "ようこそ、転生学校へ！",
+  welcome_body: "Tensei の使い方を学べる入学案内があります。まず見てみますか？",
+  welcome_view_now: "今すぐ見る",
+  welcome_later: "後で見る",
+  whats_new_title: (v: string) => `v${v} — アップデート情報`,
+  whats_new_close: "閉じる",
 
   // ChatScreen
   chat_new: "新規",
@@ -1025,6 +1032,13 @@ const ZH_TW: typeof JA = {
 
   home_empty: "還沒有任何作品。",
   home_cta: "匯入文字",
+  home_guide_btn: "轉生學校 🎓",
+  welcome_title: "歡迎來到轉生學校！",
+  welcome_body: "這裡有一份 Tensei 入學指南，介紹使用方法。要先看看嗎？",
+  welcome_view_now: "立即前往",
+  welcome_later: "稍後再看",
+  whats_new_title: (v: string) => `v${v} — 更新內容`,
+  whats_new_close: "關閉",
 
   chat_new: "新會話",
   chat_chapter_up_to: (n: number | string) => `至第${n}章`,
@@ -1764,6 +1778,13 @@ const ZH_CN: typeof JA = {
 
   home_empty: "还没有任何作品。",
   home_cta: "导入文字",
+  home_guide_btn: "转生学校 🎓",
+  welcome_title: "欢迎来到转生学校！",
+  welcome_body: "这里有一份 Tensei 入学指南，介绍使用方法。要先看看吗？",
+  welcome_view_now: "立即前往",
+  welcome_later: "稍后再看",
+  whats_new_title: (v: string) => `v${v} — 更新内容`,
+  whats_new_close: "关闭",
 
   chat_new: "新会话",
   chat_chapter_up_to: (n: number | string) => `至第${n}章`,
@@ -2503,6 +2524,13 @@ const EN: typeof JA = {
 
   home_empty: "No works yet.",
   home_cta: "Import Text",
+  home_guide_btn: "Tensei Academy 🎓",
+  welcome_title: "Welcome to Tensei Academy!",
+  welcome_body: "There's an enrollment guide to help you get started with Tensei. Want to check it out?",
+  welcome_view_now: "View Now",
+  welcome_later: "Maybe Later",
+  whats_new_title: (v: string) => `v${v} — What's New`,
+  whats_new_close: "Close",
 
   chat_new: "New",
   chat_chapter_up_to: (n: number | string) => `Up to Ch. ${n}`,
@@ -3011,4 +3039,10 @@ export function useStrings(): Strings {
     });
   }, []);
   return strings;
+}
+
+export function useLang(): UILanguage {
+  const [lang, setLang] = useState<UILanguage>("ja");
+  useEffect(() => { loadUILanguage().then(setLang); }, []);
+  return lang;
 }

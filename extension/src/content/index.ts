@@ -1,6 +1,13 @@
 import type { KakuyomuPageInfo, KakuyomuEpisode } from "@/lib/platform/kakuyomu";
 import type { SyosetsuPageInfo, SyosetsuChapter } from "@/lib/platform/syosetu";
 
+// Inject extension ID into portal/PWA pages so the guide can detect the extension
+(function injectExtId() {
+  const host = location.hostname;
+  if (host !== "tensei-portal.pages.dev" && host !== "tensei.alexlee.ccwu.cc") return;
+  document.documentElement.setAttribute("data-tensei-ext-id", chrome.runtime.id);
+})();
+
 // Portal magic-link callback: forward session token to extension
 // (more reliable than tabs.onUpdated because content scripts don't depend on the service worker)
 (function notifyPortalAuth() {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { HomeScreen } from "./screens/HomeScreen";
 import { WorkScreen } from "./screens/WorkScreen";
 import { NewChatScreen } from "./screens/NewChatScreen";
@@ -17,8 +17,83 @@ import { BtsScreen } from "./screens/BtsScreen";
 import { BtsBriefScreen } from "./screens/BtsBriefScreen";
 import { WorkRegisterScreen } from "./screens/WorkRegisterScreen";
 import { BackgroundProvider, useBackground } from "./context/BackgroundContext";
+import { db } from "@/lib/storage";
+import { saveModel, setRoleAssignment } from "@/lib/llm";
+import { useStrings, useLang, type UILanguage } from "@/lib/i18n";
+import { CHANGELOG } from "@/lib/changelog";
 import type { BtsSetup } from "@/lib/bts";
 import type { Work, Session, PerformanceSession, ProductionPlan, BtsSession, BtsLocation, BtsCrewMember } from "@/lib/storage";
+
+const GUIDE_URL = "https://tensei-portal.pages.dev/guide";
+
+function openGuide() {
+  if (typeof chrome !== "undefined" && chrome.tabs?.create) {
+    chrome.tabs.create({ url: GUIDE_URL });
+  } else {
+    window.open(GUIDE_URL, "_blank");
+  }
+}
+
+function saveCurrentVersion() {
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    chrome.storage.local.set({ tensei_version: __APP_VERSION__ });
+  }
+}
+
+function WelcomeDialog({ onViewNow, onLater }: { onViewNow: () => void; onLater: () => void }) {
+  const str = useStrings();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
+      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+        <h2 className="text-base font-semibold text-gray-800">{str.welcome_title}</h2>
+        <p className="text-sm text-gray-600 leading-relaxed">{str.welcome_body}</p>
+        <div className="flex gap-2 justify-end pt-1">
+          <button
+            onClick={onLater}
+            className="px-4 py-2 rounded text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+          >
+            {str.welcome_later}
+          </button>
+          <button
+            onClick={onViewNow}
+            className="px-4 py-2 rounded text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+          >
+            {str.welcome_view_now}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WhatsNewDialog({ lang, onClose }: { lang: UILanguage; onClose: () => void }) {
+  const str = useStrings();
+  const entry = CHANGELOG.find(e => e.version === __APP_VERSION__);
+  const items = entry ? (entry.changes[lang as keyof typeof entry.changes] ?? entry.changes["en"]) : [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
+      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+        <h2 className="text-base font-semibold text-gray-800">{str.whats_new_title(__APP_VERSION__)}</h2>
+        <ul className="space-y-2">
+          {items.map((item, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+              <span className="text-indigo-500 mt-0.5 shrink-0">✦</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="flex justify-end pt-1">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+          >
+            {str.whats_new_close}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Screen =
   | { name: "home" }
@@ -86,10 +161,59 @@ function ExpandButton() {
 
 function AppContent() {
   const { bgCss, loadBackground } = useBackground();
+  const lang = useLang();
   const [screen, setScreen] = useState<Screen>({ name: "home" });
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+
+  const dismissWelcome = useCallback((andOpen?: boolean) => {
+    setShowWelcome(false);
+    saveCurrentVersion();
+    if (andOpen) openGuide();
+  }, []);
+
+  const dismissWhatsNew = useCallback(() => {
+    setShowWhatsNew(false);
+    saveCurrentVersion();
+  }, []);
 
   const workId = getWorkId(screen);
   useEffect(() => { loadBackground(workId); }, [workId]);
+
+  useEffect(() => {
+    const goto = new URLSearchParams(window.location.search).get("goto");
+    if (goto === "settings") {
+      setScreen({ name: "settings" });
+      window.history.replaceState({}, "", "/");
+      return;
+    }
+    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
+    chrome.storage.local.get(["pending_model", "tensei_version"], async (result) => {
+      // Model saved from portal guide (externally_connectable path)
+      const m = result["pending_model"];
+      if (m) {
+        chrome.storage.local.remove("pending_model");
+        await db.open();
+        const id = await saveModel(m);
+        for (const role of ["main", "sub_agent", "compression", "plan", "scene"] as const) {
+          await setRoleAssignment(role, id);
+        }
+        setScreen({ name: "settings" });
+        saveCurrentVersion();
+        return;
+      }
+      const stored = result["tensei_version"] as string | undefined;
+      if (!stored) {
+        // First install
+        setShowWelcome(true);
+      } else if (stored !== __APP_VERSION__) {
+        // Version updated — show What's New only if changelog entry exists
+        const hasEntry = CHANGELOG.some(e => e.version === __APP_VERSION__);
+        if (hasEntry) setShowWhatsNew(true);
+        else saveCurrentVersion();
+      }
+    });
+  }, []);
 
   const content = (() => {
     if (screen.name === "work") {
@@ -251,6 +375,7 @@ function AppContent() {
         onIngest={() => setScreen({ name: "ingest" })}
         onSettings={() => setScreen({ name: "settings" })}
         onWorkRegister={() => setScreen({ name: "work-register" })}
+        onGuide={openGuide}
       />
     );
   })();
@@ -262,6 +387,15 @@ function AppContent() {
         {content}
       </div>
       <ExpandButton />
+      {showWelcome && (
+        <WelcomeDialog
+          onViewNow={() => dismissWelcome(true)}
+          onLater={() => dismissWelcome(false)}
+        />
+      )}
+      {showWhatsNew && (
+        <WhatsNewDialog lang={lang} onClose={dismissWhatsNew} />
+      )}
     </div>
   );
 }

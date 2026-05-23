@@ -383,9 +383,11 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
               <Button variant="ghost" className="w-full" onClick={handleSyncFromPortal} disabled={syncing}>
                 {syncing ? "取得中..." : "作者版を取得"}
               </Button>
-              <Button variant="ghost" className="w-full" onClick={() =>
-                chrome.tabs.create({ url: "https://tensei-portal.pages.dev/dashboard" })
-              }>
+              <Button variant="ghost" className="w-full" onClick={() => {
+                const url = "https://tensei-portal.pages.dev/dashboard";
+                if (typeof chrome !== "undefined" && chrome.tabs) chrome.tabs.create({ url });
+                else window.open(url, "_blank");
+              }}>
                 ポータルを開く
               </Button>
             </>

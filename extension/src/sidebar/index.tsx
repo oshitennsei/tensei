@@ -3,11 +3,14 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { db } from "@/lib/storage";
 import App from "./App";
+import { GuidePage } from "@/guide";
 
-db.open().catch(console.error);
+const isGuide = window.location.pathname === "/guide" || window.location.pathname.startsWith("/guide/");
+
+if (!isGuide) db.open().catch(console.error);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {isGuide ? <GuidePage /> : <App />}
   </React.StrictMode>
 );

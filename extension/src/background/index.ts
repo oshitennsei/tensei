@@ -41,6 +41,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   chrome.runtime.sendMessage({ type: "PORTAL_AUTH_SUCCESS", token: sessionToken }).catch(() => {});
 });
 
+// Handle messages from portal / PWA pages (externally_connectable)
+chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+  if (message.type === "PING") {
+    sendResponse({ ok: true });
+    return;
+  }
+  if (message.type === "SAVE_MODEL" && message.model) {
+    chrome.storage.local.set({ pending_model: message.model }, () => {
+      chrome.windows.getCurrent({ populate: false }, (w) => {
+        if (w?.id != null) chrome.sidePanel.open({ windowId: w.id });
+      });
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+});
+
 // Fallback: open side panel if triggered without a popup (e.g., keyboard shortcut)
 chrome.action.onClicked.addListener((tab) => {
   if (tab.windowId !== undefined) {
