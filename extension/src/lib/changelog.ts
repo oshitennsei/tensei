@@ -10,6 +10,35 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.0",
+    changes: {
+      ja: [
+        "🏠 Ollama / LM Studio 対応 — ローカル LLM をキー不要で接続できるように",
+        "🌍 ポータルホームページを多言語化（日本語・繁中・简中・英語）",
+        "🖼 PWA（ブラウザ版）の背景表示を修正",
+        "⚙️ 埋め込みモデルのプリセット選択時に model_name を自動補完",
+      ],
+      "zh-tw": [
+        "🏠 支援 Ollama / LM Studio — 免 API Key 連接本地 LLM",
+        "🌍 入口網站首頁支援多語言（日/繁/簡/英）",
+        "🖼 修正 PWA（瀏覽器版）背景顯示問題",
+        "⚙️ 選擇嵌入式模型預設時自動補全 model_name",
+      ],
+      "zh-cn": [
+        "🏠 支持 Ollama / LM Studio — 免 API Key 连接本地 LLM",
+        "🌍 入口网站首页支持多语言（日/繁/简/英）",
+        "🖼 修正 PWA（浏览器版）背景显示问题",
+        "⚙️ 选择嵌入式模型预设时自动补全 model_name",
+      ],
+      en: [
+        "🏠 Ollama / LM Studio support — connect local LLMs without an API key",
+        "🌍 Portal homepage now supports multiple languages (ja / zh-TW / zh-CN / en)",
+        "🖼 Fixed background display in PWA (browser version)",
+        "⚙️ Embedding model preset now auto-fills model_name on selection",
+      ],
+    },
+  },
+  {
     version: "0.1.0",
     changes: {
       ja: [
