@@ -349,7 +349,7 @@ export function SettingsScreen({ onBack, onDebug, onPersona }: Props) {
                 <div className="flex gap-1 mb-1 flex-wrap">
                   {PRESET_ENDPOINTS.map(p => (
                     <Button key={p.url} variant="ghost" size="sm"
-                      onClick={() => { setForm(f => ({ ...f, endpoint_url: p.url })); setTestState("idle"); }}>
+                      onClick={() => { setForm(f => ({ ...f, endpoint_url: p.url, ...(p.url.startsWith("local://") && { model_name: LOCAL_EMBED_MODELS[0].name }) })); setTestState("idle"); }}>
                       {p.label}
                     </Button>
                   ))}

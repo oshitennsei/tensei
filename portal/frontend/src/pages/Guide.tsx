@@ -44,6 +44,9 @@ const T = {
       copyHint: "コピーしたら、Tensei の設定画面で「＋ モデルを追加」して貼り付けてください。",
       multiKeyTip: "💡 複数のキーを設定しておくと、残量切れ時に切り替えられます。",
       noCorsHint: "⚠️ NIM はブラウザからの直接テストができません。キーを入力してそのまま保存できます。",
+      urlLabel: "サーバー URL",
+      localModelLabel: "モデル名",
+      localHint: "⚠️ Ollama / LM Studio は同じデバイス上で起動している必要があります。",
       extFound: "🔌 拡張機能を検出 — 自動で拡張機能に保存します",
       extSaveBtn: "拡張機能に保存",
       extSaving: "拡張機能に保存中...",
@@ -90,6 +93,19 @@ const T = {
             "NVIDIA アカウントで登録",
             "Get API Key → Generate Key",
             "キーをコピー（nvapi-... で始まる）",
+          ],
+        },
+        {
+          dir: "西",
+          name: "Ollama / LM Studio",
+          sub: "地元の隠者 — ローカルで動作する上級者向け",
+          badge: "🏠 ローカル実行",
+          color: "#f97316",
+          steps: [
+            "Ollama または LM Studio をインストール",
+            "モデルをダウンロード（例: llama3.2）",
+            "サーバーを起動（通常 http://localhost:11434）",
+            "以下で URL とモデル名を設定して保存",
           ],
         },
       ],
@@ -207,6 +223,9 @@ const T = {
       copyHint: "複製後，在 Tensei 設定畫面點「＋ 新增模型」貼上即可。",
       multiKeyTip: "💡 可以設定多個 Key，Token 用完時自動切換。",
       noCorsHint: "⚠️ NIM 不支援從瀏覽器直接測試。請直接輸入 Key 並儲存，在 Tensei 中使用時會自動驗證。",
+      urlLabel: "伺服器 URL",
+      localModelLabel: "模型名稱",
+      localHint: "⚠️ Ollama / LM Studio 必須在同一裝置上執行。",
       extFound: "🔌 已偵測到擴充功能 — 將自動儲存到擴充功能",
       extSaveBtn: "儲存到擴充功能",
       extSaving: "儲存到擴充功能中...",
@@ -253,6 +272,19 @@ const T = {
             "用 NVIDIA 帳號註冊",
             "Get API Key → Generate Key",
             "複製 Key（以 nvapi-... 開頭）",
+          ],
+        },
+        {
+          dir: "西",
+          name: "Ollama / LM Studio",
+          sub: "在地隱者 — 本機運行，適合進階用戶",
+          badge: "🏠 本機執行",
+          color: "#f97316",
+          steps: [
+            "安裝 Ollama 或 LM Studio",
+            "下載模型（例：llama3.2）",
+            "啟動伺服器（通常 http://localhost:11434）",
+            "在下方設定 URL 與模型名稱後儲存",
           ],
         },
       ],
@@ -365,6 +397,9 @@ const T = {
       copyHint: "复制后，在 Tensei 设置界面点「＋ 添加模型」粘贴即可。",
       multiKeyTip: "💡 可以设置多个 Key，Token 用完时自动切换。",
       noCorsHint: "⚠️ NIM 不支持从浏览器直接测试。请直接输入 Key 并保存，在 Tensei 中使用时会自动验证。",
+      urlLabel: "服务器 URL",
+      localModelLabel: "模型名称",
+      localHint: "⚠️ Ollama / LM Studio 需在同一设备上运行。",
       extFound: "🔌 已检测到扩展程序 — 将自动保存到扩展程序",
       extSaveBtn: "保存到扩展程序",
       extSaving: "保存到扩展程序中...",
@@ -377,6 +412,7 @@ const T = {
         { dir: "东", name: "OpenRouter", sub: "商人之城 — 多条路线，新手推荐", badge: "✨ 新手推荐", color: "#22c55e", steps: ["打开 openrouter.ai", "Sign up → 用 Google 或 Email 注册", "Keys → Create Key → 输入名称", "复制 Key（以 sk-or-v1-... 开头）"] },
         { dir: "南", name: "Google AI Studio", sub: "学者圣殿 — 有 Google 账号即可免费使用", badge: "🆓 完全免费", color: "#6366f1", steps: ["打开 aistudio.google.com", "用 Google 账号登录", "「Get API key」→「Create API key」", "复制 Key（以 AIza... 开头）"] },
         { dir: "北", name: "NVIDIA NIM", sub: "武人要塞 — 强大但适合进阶用户", badge: "⚔️ 进阶用户", color: "#d4af37", steps: ["打开 build.nvidia.com", "用 NVIDIA 账号注册", "Get API Key → Generate Key", "复制 Key（以 nvapi-... 开头）"] },
+        { dir: "西", name: "Ollama / LM Studio", sub: "本地隐者 — 本机运行，适合进阶用户", badge: "🏠 本机运行", color: "#f97316", steps: ["安装 Ollama 或 LM Studio", "下载模型（例：llama3.2）", "启动服务器（通常 http://localhost:11434）", "在下方设置 URL 与模型名称后保存"] },
       ],
       complete: "🎉 已获取 API Key！前往下一个城镇。",
     },
@@ -427,6 +463,9 @@ const T = {
       copyHint: "After copying, open Tensei Settings → Add Model and paste it there.",
       multiKeyTip: "💡 You can add multiple keys and switch when one runs out of tokens.",
       noCorsHint: "⚠️ NIM blocks direct browser requests. Paste your key and save directly — it will be validated when Tensei first uses it.",
+      urlLabel: "Server URL",
+      localModelLabel: "Model Name",
+      localHint: "⚠️ Ollama / LM Studio must be running on the same device.",
       extFound: "🔌 Extension detected — will save directly to extension",
       extSaveBtn: "Save to Extension",
       extSaving: "Saving to extension...",
@@ -439,6 +478,7 @@ const T = {
         { dir: "E", name: "OpenRouter", sub: "Merchant's City — Many routes, recommended for beginners", badge: "✨ Beginner Pick", color: "#22c55e", steps: ["Open openrouter.ai", "Sign up with Google or Email", "Keys → Create Key → Enter a name", "Copy key (starts with sk-or-v1-...)"] },
         { dir: "S", name: "Google AI Studio", sub: "Scholar's Sanctum — Free with a Google account", badge: "🆓 Totally Free", color: "#6366f1", steps: ["Open aistudio.google.com", "Sign in with Google", "Get API key → Create API key", "Copy key (starts with AIza...)"] },
         { dir: "N", name: "NVIDIA NIM", sub: "Warrior's Fortress — Powerful, for advanced users", badge: "⚔️ Advanced", color: "#d4af37", steps: ["Open build.nvidia.com", "Register NVIDIA account", "Get API Key → Generate Key", "Copy key (starts with nvapi-...)"] },
+        { dir: "W", name: "Ollama / LM Studio", sub: "Local Hermit — Run AI on your own machine", badge: "🏠 Local", color: "#f97316", steps: ["Install Ollama or LM Studio", "Download a model (e.g. llama3.2)", "Start the server (usually http://localhost:11434)", "Enter the URL and model name below, then save"] },
       ],
       complete: "🎉 API Key obtained! Proceed to the next town.",
     },
@@ -486,6 +526,16 @@ const PROVIDER_CONFIG = [
     defaultModel: "meta/llama-3.1-8b-instruct",
     modelLabel: "Llama 3.1 8B Instruct",
     noCors: true,
+  },
+  {
+    signupUrl: "",
+    keyPrefix: "",
+    endpoint: "",
+    defaultModel: "llama3.2",
+    defaultUrl: "http://localhost:11434/v1",
+    modelLabel: "Ollama / LM Studio",
+    noCors: false,
+    isLocal: true,
   },
 ] as const;
 
@@ -729,6 +779,8 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
   const [testState, setTestState] = useState<TestState>("idle");
   const [testMsg, setTestMsg] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [localUrl, setLocalUrl] = useState("http://localhost:11434/v1");
+  const [localModel, setLocalModel] = useState("llama3.2");
   const extId = document.documentElement.getAttribute("data-tensei-ext-id");
   const s = t.s1;
 
@@ -739,6 +791,8 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
       setTestState("idle");
       setTestMsg("");
       setSaveState("idle");
+      setLocalUrl("http://localhost:11434/v1");
+      setLocalModel("llama3.2");
     } else {
       setSelected(null);
     }
@@ -799,10 +853,32 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
     }
   }
 
+  function handleLocalSave() {
+    if (!localUrl.trim() || !localModel.trim()) return;
+    const model = {
+      name: `Ollama (${localModel.trim()})`,
+      endpoint_url: localUrl.trim(),
+      api_key: "",
+      model_name: localModel.trim(),
+    };
+    setSaveState("saving");
+    if (extId && (window as unknown as { chrome?: { runtime?: { sendMessage?: unknown } } }).chrome?.runtime?.sendMessage) {
+      (window as unknown as { chrome: { runtime: { sendMessage: (id: string, msg: unknown, cb: (r: unknown) => void) => void } } })
+        .chrome.runtime.sendMessage(extId, { type: "SAVE_MODEL", model }, () => { setSaveState("done"); });
+    } else {
+      try {
+        const existing = JSON.parse(localStorage.getItem("tensei_pending_model") ?? "null");
+        if (!existing) localStorage.setItem("tensei_pending_model", JSON.stringify(model));
+      } catch { /* ignore */ }
+      setSaveState("done");
+    }
+  }
+
   const city = selected !== null ? s.cities[selected] : null;
   const provider = selected !== null ? PROVIDER_CONFIG[selected] : null;
-  const canTest = apiKey.trim().length > 8 && testState !== "testing" && !provider?.noCors;
-  const showSave = (testState === "ok" || provider?.noCors === true) && apiKey.trim().length > 8;
+  const isLocalCity = selected === 3;
+  const canTest = !isLocalCity && apiKey.trim().length > 8 && testState !== "testing" && !provider?.noCors;
+  const showSave = !isLocalCity && (testState === "ok" || provider?.noCors === true) && apiKey.trim().length > 8;
 
   return (
     <section id="section-1" className="min-h-screen flex flex-col justify-center py-24 px-6 lg:px-24 max-w-4xl mx-auto">
@@ -818,8 +894,8 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
         <span>{s.goblin}</span>
       </div>
 
-      {/* Three cities */}
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      {/* Cities */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         {s.cities.map((c, i) => (
           <button
             key={i}
@@ -844,18 +920,20 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
       {/* Interactive panel */}
       {selected !== null && city && provider && (
         <RpgCard className="mb-6 space-y-5" delay={0}>
-          {/* Header + signup button */}
+          {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="font-semibold text-sm" style={{ color: "#d4af37" }}>{city.name}</div>
-            <a
-              href={provider.signupUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs px-3 py-1.5 rounded font-medium transition-all"
-              style={{ background: `${city.color}20`, border: `1px solid ${city.color}60`, color: city.color }}
-            >
-              {s.signupBtn}
-            </a>
+            {!isLocalCity && (
+              <a
+                href={provider.signupUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs px-3 py-1.5 rounded font-medium transition-all"
+                style={{ background: `${city.color}20`, border: `1px solid ${city.color}60`, color: city.color }}
+              >
+                {s.signupBtn}
+              </a>
+            )}
           </div>
 
           {/* Steps */}
@@ -875,79 +953,37 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
 
           <div style={{ borderTop: "1px solid rgba(212,175,55,0.15)" }} />
 
-          {/* NIM: no-CORS warning */}
-          {provider.noCors && (
-            <div className="text-xs px-3 py-2 rounded" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24" }}>
-              {s.noCorsHint}
-            </div>
-          )}
-
-          {/* Key format hint */}
-          <div className="text-xs" style={{ color: "#6b7280" }}>
-            {s.keyFormat}{" "}
-            <code className="px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(255,255,255,0.06)", color: "#d4af37" }}>
-              {provider.keyPrefix}xxxxxxxx...
-            </code>
-          </div>
-
-          {/* Key input + test */}
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={e => { setApiKey(e.target.value); setTestState("idle"); setTestMsg(""); }}
-              placeholder={s.keyPlaceholder}
-              className="flex-1 rounded px-3 py-2 text-sm font-mono outline-none"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: `1px solid ${testState === "ok" ? "#22c55e" : testState === "fail" ? "#ef4444" : "rgba(255,255,255,0.12)"}`,
-                color: "#e5e7eb",
-              }}
-            />
-            {!provider.noCors && (
-              <button
-                onClick={handleTest}
-                disabled={!canTest}
-                className="px-4 py-2 rounded text-sm font-medium transition-all flex-shrink-0"
-                style={{
-                  background: canTest ? `${city.color}20` : "rgba(255,255,255,0.04)",
-                  border: `1px solid ${canTest ? city.color : "rgba(255,255,255,0.1)"}`,
-                  color: canTest ? city.color : "#4b5563",
-                  cursor: canTest ? "pointer" : "not-allowed",
-                }}
-              >
-                {testState === "testing" ? s.testing : s.testBtn}
-              </button>
-            )}
-          </div>
-
-          {/* Test result (non-CORS providers) */}
-          {testState === "ok" && (
-            <div className="text-sm font-medium" style={{ color: "#86efac" }}>{s.testOk}</div>
-          )}
-          {testState === "fail" && (
-            <div className="space-y-1">
-              <div className="text-sm" style={{ color: "#f87171" }}>{s.testFail}</div>
-              {testMsg && <div className="text-xs font-mono break-all" style={{ color: "#6b7280" }}>{testMsg}</div>}
-            </div>
-          )}
-
-          {/* Save button — shown after test OK, or immediately for noCors */}
-          {showSave && (
-            <div className="space-y-2">
-              <div className="text-xs" style={{ color: "#6b7280" }}>
-                {s.modelSuggestion}{" "}
-                <code className="px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(255,255,255,0.06)", color: "#d4af37" }}>
-                  {provider.defaultModel}
-                </code>
-                {" "}— {provider.modelLabel}
+          {isLocalCity ? (
+            /* Local LLM: URL + model inputs */
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs mb-1" style={{ color: "#6b7280" }}>{s.urlLabel}</label>
+                <input
+                  value={localUrl}
+                  onChange={e => setLocalUrl(e.target.value)}
+                  placeholder="http://localhost:11434/v1"
+                  className="w-full rounded px-3 py-2 text-sm font-mono outline-none"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", color: "#e5e7eb" }}
+                />
               </div>
-              {/* Ext / no-ext hint */}
+              <div>
+                <label className="block text-xs mb-1" style={{ color: "#6b7280" }}>{s.localModelLabel}</label>
+                <input
+                  value={localModel}
+                  onChange={e => setLocalModel(e.target.value)}
+                  placeholder="llama3.2"
+                  className="w-full rounded px-3 py-2 text-sm font-mono outline-none"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", color: "#e5e7eb" }}
+                />
+              </div>
+              <div className="text-xs px-3 py-2 rounded" style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.25)", color: "#fb923c" }}>
+                {s.localHint}
+              </div>
               <div className="text-xs px-2 py-1.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6b7280" }}>
                 {extId ? s.extFound : s.pwaFound}
               </div>
               <button
-                onClick={handleSave}
+                onClick={handleLocalSave}
                 disabled={saveState !== "idle"}
                 className="w-full py-2.5 rounded font-semibold text-sm transition-all"
                 style={{
@@ -964,6 +1000,99 @@ function Section1({ t, active }: { t: typeof T["ja"]; active: boolean }) {
                   : (extId ? s.extSaveBtn : s.pwaSaveBtn)}
               </button>
             </div>
+          ) : (
+            /* Cloud provider: API key flow */
+            <>
+              {/* NIM: no-CORS warning */}
+              {provider.noCors && (
+                <div className="text-xs px-3 py-2 rounded" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24" }}>
+                  {s.noCorsHint}
+                </div>
+              )}
+
+              {/* Key format hint */}
+              <div className="text-xs" style={{ color: "#6b7280" }}>
+                {s.keyFormat}{" "}
+                <code className="px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(255,255,255,0.06)", color: "#d4af37" }}>
+                  {provider.keyPrefix}xxxxxxxx...
+                </code>
+              </div>
+
+              {/* Key input + test */}
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={e => { setApiKey(e.target.value); setTestState("idle"); setTestMsg(""); }}
+                  placeholder={s.keyPlaceholder}
+                  className="flex-1 rounded px-3 py-2 text-sm font-mono outline-none"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: `1px solid ${testState === "ok" ? "#22c55e" : testState === "fail" ? "#ef4444" : "rgba(255,255,255,0.12)"}`,
+                    color: "#e5e7eb",
+                  }}
+                />
+                {!provider.noCors && (
+                  <button
+                    onClick={handleTest}
+                    disabled={!canTest}
+                    className="px-4 py-2 rounded text-sm font-medium transition-all flex-shrink-0"
+                    style={{
+                      background: canTest ? `${city.color}20` : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${canTest ? city.color : "rgba(255,255,255,0.1)"}`,
+                      color: canTest ? city.color : "#4b5563",
+                      cursor: canTest ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    {testState === "testing" ? s.testing : s.testBtn}
+                  </button>
+                )}
+              </div>
+
+              {/* Test result */}
+              {testState === "ok" && (
+                <div className="text-sm font-medium" style={{ color: "#86efac" }}>{s.testOk}</div>
+              )}
+              {testState === "fail" && (
+                <div className="space-y-1">
+                  <div className="text-sm" style={{ color: "#f87171" }}>{s.testFail}</div>
+                  {testMsg && <div className="text-xs font-mono break-all" style={{ color: "#6b7280" }}>{testMsg}</div>}
+                </div>
+              )}
+
+              {/* Save button — shown after test OK, or immediately for noCors */}
+              {showSave && (
+                <div className="space-y-2">
+                  <div className="text-xs" style={{ color: "#6b7280" }}>
+                    {s.modelSuggestion}{" "}
+                    <code className="px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(255,255,255,0.06)", color: "#d4af37" }}>
+                      {provider.defaultModel}
+                    </code>
+                    {" "}— {provider.modelLabel}
+                  </div>
+                  <div className="text-xs px-2 py-1.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6b7280" }}>
+                    {extId ? s.extFound : s.pwaFound}
+                  </div>
+                  <button
+                    onClick={handleSave}
+                    disabled={saveState !== "idle"}
+                    className="w-full py-2.5 rounded font-semibold text-sm transition-all"
+                    style={{
+                      background: (saveState as SaveState) === "done" ? "rgba(34,197,94,0.2)" : `${city.color}25`,
+                      border: `1px solid ${(saveState as SaveState) === "done" ? "#22c55e" : city.color}`,
+                      color: (saveState as SaveState) === "done" ? "#86efac" : city.color,
+                      cursor: saveState === "idle" ? "pointer" : "default",
+                    }}
+                  >
+                    {(saveState as SaveState) === "saving"
+                      ? (extId ? s.extSaving : s.pwaSaving)
+                      : (saveState as SaveState) === "done"
+                      ? (extId ? s.extSaved : s.pwaSaved)
+                      : (extId ? s.extSaveBtn : s.pwaSaveBtn)}
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           <div className="text-xs" style={{ color: "#4b5563" }}>{s.multiKeyTip}</div>

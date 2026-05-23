@@ -131,7 +131,7 @@ export function HomeScreen({ onSelectWork, onIngest, onSettings, onWorkRegister,
   useEffect(() => { listWorks().then(setWorks); }, []);
 
   return (
-    <div className="flex flex-col h-full" style={{ background: C.bg }}>
+    <div className="flex flex-col h-full" style={{ background: "rgba(8,10,20,0.88)" }}>
       <header
         className="flex items-center justify-between px-4 py-2.5 shrink-0"
         style={{ borderBottom: "1px solid rgba(99,102,241,0.12)", background: "rgba(8,10,20,0.95)" }}
