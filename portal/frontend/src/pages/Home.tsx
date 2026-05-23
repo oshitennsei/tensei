@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 const WEB_STORE_URL =
   "https://chromewebstore.google.com/detail/キャラクターが転生してきた件/fmbhoboogphkfenpekeklmkkjhbcfmmc";
 
@@ -125,19 +127,49 @@ const EN = {
   feat3_body: "Characters from the same work know each other — relationships, history, and world logic all cohere.",
 };
 
-function useLang() {
+type Lang = "ja" | "zh-TW" | "zh-CN" | "en";
+
+const LANGS: { key: Lang; label: string }[] = [
+  { key: "ja",    label: "日本語" },
+  { key: "zh-TW", label: "繁中" },
+  { key: "zh-CN", label: "简中" },
+  { key: "en",    label: "EN" },
+];
+
+const LANG_MAP: Record<Lang, typeof JA> = { ja: JA, "zh-TW": ZH_TW, "zh-CN": ZH_CN, en: EN };
+
+function detectLang(): Lang {
   const l = navigator.language.toLowerCase();
-  if (l.startsWith("zh-tw") || l.startsWith("zh-hant")) return ZH_TW;
-  if (l.startsWith("zh")) return ZH_CN;
-  if (l.startsWith("ja")) return JA;
-  return EN;
+  if (l.startsWith("zh-tw") || l.startsWith("zh-hant")) return "zh-TW";
+  if (l.startsWith("zh")) return "zh-CN";
+  if (l.startsWith("ja")) return "ja";
+  return "en";
 }
 
 export function HomePage() {
-  const T = useLang();
+  const [lang, setLang] = useState<Lang>(detectLang);
+  const T = LANG_MAP[lang];
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-12 space-y-12">
+      {/* Lang picker */}
+      <div className="flex justify-end gap-1">
+        {LANGS.map((l) => (
+          <button
+            key={l.key}
+            onClick={() => setLang(l.key)}
+            className="px-2.5 py-1 rounded text-xs transition-colors"
+            style={{
+              background: lang === l.key ? "rgba(99,102,241,0.2)" : "transparent",
+              color: lang === l.key ? "#818cf8" : "#6b7280",
+              border: lang === l.key ? "1px solid rgba(99,102,241,0.4)" : "1px solid transparent",
+            }}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
+
       {/* Hero */}
       <div className="text-center space-y-3">
         <h1 className="text-2xl font-bold text-white">キャラクターが転生してきた件</h1>
