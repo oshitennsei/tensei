@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "キャラクターが転生してきた件",
-  "version": "0.2.0",
-  "description": "好きな小説のキャラクターと対話できる拡張機能",
+  "name": "Tensei | キャラクターが転生してきた件",
+  "version": "0.2.1",
+  "description": "Tensei — 好きな小説のキャラクターと対話できる拡張機能",
   "minimum_chrome_version": "114",
   "permissions": ["sidePanel", "storage", "windows", "scripting", "tabs"],
   "host_permissions": [
