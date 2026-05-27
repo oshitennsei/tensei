@@ -21,19 +21,12 @@ export default defineConfig({
       // Inline the SW registration so no extra request is needed
       injectRegister: "inline",
       workbox: {
-        // Precache all bundled assets (JS, CSS, WASM, images)
-        globPatterns: ["**/*.{js,css,webp,png,svg,ico}"],
+        // Precache JS, CSS, images, and WASM (fingerprinted → safe to cache forever)
+        globPatterns: ["**/*.{js,css,wasm,webp,png,svg,ico}"],
         globIgnores: ["**/node_modules/**"],
-        // WASM and large binaries: cache-first, never expire
+        // Raise limit to 30 MB so the 23 MB ONNX runtime WASM is precached
+        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         runtimeCaching: [
-          {
-            urlPattern: /\.wasm$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "wasm-cache",
-              expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 },
-            },
-          },
           // HuggingFace model files (ONNX weights, tokenizer, config)
           {
             urlPattern: /^https:\/\/huggingface\.co\/.*/,
