@@ -152,6 +152,22 @@ export interface Timeline {
   events_in_order: string[]; // event ids
 }
 
+// ─── Entity extended (location / item state arcs) ────────────────────────────
+
+export interface EntityStateSnapshot {
+  at_chapter: number;
+  state_note: string;      // ≤300 chars: what changed for this entity
+  controller?: string;     // locations: who controls/occupies it
+  holder?: string;         // items: who possesses it
+  status?: string;         // general current status
+}
+
+export interface EntityExtended {
+  id: string;              // same as Entity.id
+  work_id: string;
+  state_snapshots: EntityStateSnapshot[];
+}
+
 // ─── Character and session stores ────────────────────────────────────────────
 
 export interface VoiceSample {

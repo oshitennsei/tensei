@@ -2,7 +2,7 @@ import Dexie, { type EntityTable } from "dexie";
 import type {
   Work, Chapter, Scene, Chunk,
   Entity, Event, Timeline,
-  CharacterExtended, Session, Persona, LlmConfig,
+  CharacterExtended, EntityExtended, Session, Persona, LlmConfig,
   LlmModel, LlmRoleAssignments, AppSettings,
   CacheSubagent, AuthorizationLocal,
   PerformanceTemplate, PerformerSkill, PerformanceSession,
@@ -19,6 +19,7 @@ class TenseiDb extends Dexie {
   events!: EntityTable<Event, "id">;
   timelines!: EntityTable<Timeline, "id">;
   characters_extended!: EntityTable<CharacterExtended, "id">;
+  entities_extended!: EntityTable<EntityExtended, "id">;
   sessions!: EntityTable<Session, "id">;
   personas!: EntityTable<Persona, "id">;
   llm_configs!: EntityTable<LlmConfig, "id">;
@@ -148,6 +149,10 @@ class TenseiDb extends Dexie {
     this.version(19).stores({});  // user_character_id added to PerformanceSession
 
     this.version(20).stores({});  // segment_type, speaker_name added to GeneratedSegment
+
+    this.version(21).stores({
+      entities_extended: "&id, work_id",
+    });
   }
 }
 

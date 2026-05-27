@@ -1,5 +1,5 @@
 import { db } from "@/lib/storage";
-import type { Work, Chapter, Chunk, Entity, CharacterExtended, Language, Event, EventOccurrence, EventParticipant } from "@/lib/storage";
+import type { Work, Chapter, Chunk, Entity, CharacterExtended, EntityExtended, EntityStateSnapshot, Language, Event, EventOccurrence, EventParticipant } from "@/lib/storage";
 import { LlmClient, LlmError, getModelForRole } from "@/lib/llm";
 import { getEmbedder } from "@/lib/embedding";
 
@@ -66,6 +66,7 @@ interface AccumulatedAnalysis {
   key_events: string[];
   character_updates: CharacterUpdate[];
   events: RawEventResult[];
+  entity_updates: RawEntityUpdate[];
 }
 
 function mergeAccumulated(acc: AccumulatedAnalysis, next: Partial<AnalysisResult>): AccumulatedAnalysis {
@@ -120,12 +121,20 @@ function mergeAccumulated(acc: AccumulatedAnalysis, next: Partial<AnalysisResult
     }
   }
 
+  // Merge entity_updates (location/item) — last occurrence wins per name per chapter
+  const entityUpdateMap = new Map(acc.entity_updates.map(u => [u.name.toLowerCase(), { ...u }]));
+  for (const u of next.entity_updates ?? []) {
+    if (!u.name || !u.state_note) continue;
+    entityUpdateMap.set(u.name.toLowerCase(), { ...u });
+  }
+
   return {
     characters: [...charMap.values()],
     items: [...itemSet],
     key_events: events,
     character_updates: [...updateMap.values()],
     events: [...eventMap.values()],
+    entity_updates: [...entityUpdateMap.values()],
   };
 }
 
@@ -168,6 +177,15 @@ interface CharacterUpdate {
   relationship_changes?: Record<string, string>;
 }
 
+interface RawEntityUpdate {
+  name: string;
+  type: "location" | "item";
+  state_note: string;      // ≤300 chars: what changed
+  controller?: string;     // locations: who controls/occupies it
+  holder?: string;         // items: who possesses it
+  status?: string;
+}
+
 interface RawEventResult {
   what: string;           // short event label ≤50 chars
   who: string[];          // character names involved
@@ -186,6 +204,7 @@ interface AnalysisResult {
   key_events: string[];
   character_updates?: CharacterUpdate[];
   events?: RawEventResult[];
+  entity_updates?: RawEntityUpdate[];
 }
 
 function formatKnownChars(entities: Entity[], lang: string): string {
@@ -278,6 +297,16 @@ function buildAnalysisSystem(lang: string): string {
       "consequences": ["結果・影響（1〜3項）"],
       "note": "本章中這個事件的具體描述（300字以內）"
     }
+  ],
+  "entity_updates": [
+    {
+      "name": "地點或物品的名稱",
+      "type": "location",
+      "state_note": "本章中此地點/物品的狀態變化（300字以內）",
+      "controller": "（地點用）目前控制者・占領者",
+      "holder": "（物品用）目前持有者",
+      "status": "目前狀態概述"
+    }
   ]
 }
 
@@ -299,7 +328,14 @@ function buildAnalysisSystem(lang: string): string {
 ✓ 重要地點的侵入・發現
 ✓ 人物關係的決定性轉折（背叛・和解・告白・結盟）
 ✗ 日常對話・移動・普通會議不在記錄範圍內
-若本章無重大事件，請返回空陣列 []`;
+若本章無重大事件，請返回空陣列 []
+
+【entity_updates 填寫規則】
+只記錄本章中有明確狀態變化的地點或物品（每章最多5件）：
+✓ 地點的占領・解放・破壞・名稱變更
+✓ 重要物品的轉移・破壞・啟動・封印
+✗ 單純出現、無狀態變化者不列入
+若本章無地點・物品的狀態變化，請返回空陣列 []`;
   }
 
   if (lang === "en") {
@@ -342,6 +378,16 @@ Return this JSON format (all text in English):
       "consequences": ["outcomes (1-3 items)"],
       "note": "concrete description of this event as it appears in this chapter (under 300 words)"
     }
+  ],
+  "entity_updates": [
+    {
+      "name": "location or item name",
+      "type": "location",
+      "state_note": "how this location/item's state changed in this chapter (under 300 words)",
+      "controller": "(locations) who now controls or occupies it",
+      "holder": "(items) who now possesses it",
+      "status": "current status summary"
+    }
   ]
 }
 
@@ -363,7 +409,14 @@ Record only major events (up to 5 per chapter):
 ✓ Entry into or discovery of an important location
 ✓ Decisive turning point in relationships (betrayal, reconciliation, confession, alliance)
 ✗ Exclude: casual conversation, travel, routine meetings
-Return [] if no major events occur`;
+Return [] if no major events occur
+
+[entity_updates rules]
+Record only locations or items with clear state changes in this chapter (up to 5):
+✓ Location captured, liberated, destroyed, renamed
+✓ Important item transferred, destroyed, activated, sealed
+✗ Exclude: locations/items that merely appear without any state change
+Return [] if no location or item changes state`;
   }
 
   if (lang === "ko") {
@@ -406,6 +459,16 @@ Return [] if no major events occur`;
       "consequences": ["결과・영향 (1~3개)"],
       "note": "이 챕터에서 이 사건의 구체적인 묘사 (300자 이내)"
     }
+  ],
+  "entity_updates": [
+    {
+      "name": "장소 또는 아이템 이름",
+      "type": "location",
+      "state_note": "이 챕터에서 이 장소/아이템의 상태 변화 (300자 이내)",
+      "controller": "(장소) 현재 지배자・점령자",
+      "holder": "(아이템) 현재 소지자",
+      "status": "현재 상태 요약"
+    }
   ]
 }
 
@@ -422,7 +485,14 @@ Return [] if no major events occur`;
 ✓ 중요한 장소 침입・발견
 ✓ 인물 관계의 결정적 전환점 (배신・화해・고백・동맹)
 ✗ 일상 대화・이동・통상 회의는 대상 외
-중대한 사건이 없는 경우 []`;
+중대한 사건이 없는 경우 []
+
+[entity_updates 규칙]
+이 챕터에서 상태가 명확히 변한 장소・아이템만 기록 (최대 5건):
+✓ 장소의 점령・해방・파괴・개명
+✓ 중요 아이템의 이전・파괴・발동・봉인
+✗ 단순 등장・상태 변화 없음은 제외
+상태 변화가 없는 경우 []`;
   }
 
   // Default: Japanese
@@ -465,6 +535,16 @@ Return [] if no major events occur`;
       "consequences": ["結果・影響（1〜3項目）"],
       "note": "本章でのこの事件の具体的な描写（300文字以内）"
     }
+  ],
+  "entity_updates": [
+    {
+      "name": "場所またはアイテムの名称",
+      "type": "location",
+      "state_note": "本章でのこの場所・アイテムの状態変化（300文字以内）",
+      "controller": "（場所）現在の支配者・占領者",
+      "holder": "（アイテム）現在の所持者",
+      "status": "現在の状態概要"
+    }
   ]
 }
 
@@ -481,7 +561,14 @@ Return [] if no major events occur`;
 ✓ 重要な場所への侵入・発見
 ✓ 人物関係の決定的な転換点（裏切り・和解・告白・同盟）
 ✗ 日常会話・移動・通常の会議は対象外
-重大な事件がない場合は []`;
+重大な事件がない場合は []
+
+【entity_updates 抽出ルール】
+本章で状態が明確に変化した場所・アイテムのみ記録（最大5件）：
+✓ 場所の占領・解放・破壊・改名
+✓ 重要アイテムの移転・破壊・起動・封印
+✗ 単純な登場・状態変化なしは対象外
+変化がない場合は []`;
 }
 
 // Returns only the variable-content user message — no schema, no rules (those live in system)
@@ -572,7 +659,20 @@ function filterRelevantKnownEntities(entities: Entity[], chapter: Chapter, windo
   return filtered.slice(0, 80);
 }
 
-// Single LLM call for one block of text
+// Thrown when a chapter fails all retries — signals the batch to stop immediately.
+export class AnalysisFatalError extends Error {
+  readonly cause?: unknown;
+  constructor(public readonly chapterTitle: string, cause?: unknown) {
+    super(`3回連続解析失敗: ${chapterTitle}`);
+    this.name = "AnalysisFatalError";
+    this.cause = cause;
+  }
+}
+
+const MAX_ANALYSIS_RETRIES = 3;
+
+// Single LLM call for one block of text — retries up to MAX_ANALYSIS_RETRIES times.
+// Throws AnalysisFatalError after all retries are exhausted.
 async function llmAnalyzeBlock(
   chapter: Chapter,
   lang: string,
@@ -581,19 +681,26 @@ async function llmAnalyzeBlock(
   passType: PassType,
   accumulatedEvents: string[],
   client: InstanceType<typeof LlmClient>,
-): Promise<Partial<AnalysisResult> | null> {
+): Promise<Partial<AnalysisResult>> {
   const { system, user } = buildAnalysisPrompt(
     chapter, lang, knownEntities, blockText, passType, accumulatedEvents,
   );
-  const raw = await client.complete([
-    { role: "system", content: system },
-    { role: "user", content: user },
-  ]);
-  try {
-    return extractJson(raw) as Partial<AnalysisResult>;
-  } catch {
-    return null;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ANALYSIS_RETRIES; attempt++) {
+    try {
+      const raw = await client.complete([
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ]);
+      return extractJson(raw) as Partial<AnalysisResult>;
+    } catch (e) {
+      lastError = e;
+      if (attempt < MAX_ANALYSIS_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // 1s → 2s backoff
+      }
+    }
   }
+  throw new AnalysisFatalError(chapter.title, lastError);
 }
 
 async function llmAnalyze(
@@ -615,17 +722,26 @@ async function llmAnalyze(
     await db.works.update(work.id, { language: detected });
   }
   const lang = detected;
-  const knownEntities = filterRelevantKnownEntities(allKnownEntities, chapter);
+
+  // Filter to entities whose names actually appear in this chapter's text.
+  // This replaces the heuristic window approach — for a 100-character novel only
+  // the 10-15 entities appearing in this chapter are passed, not all 100.
+  const textLower = chapter.full_text.toLowerCase();
+  const knownEntities = allKnownEntities
+    .filter(e => [e.canonical_name, ...e.aliases].some(n => n.length >= 2 && textLower.includes(n.toLowerCase())))
+    .slice(0, 80);
   const blockSize = getBlockSize(model?.context_window);
   const blocks = splitIntoBlocks(chapter.full_text, blockSize);
 
   if (blocks.length === 1) {
+    // AnalysisFatalError propagates up naturally
     const result = await llmAnalyzeBlock(chapter, lang, knownEntities, blocks[0], "single", [], client);
-    return result as AnalysisResult | null;
+    return result as AnalysisResult;
   }
 
   // Multi-pass: accumulate across blocks
-  let acc: AccumulatedAnalysis = { characters: [], items: [], key_events: [], character_updates: [], events: [] };
+  // AnalysisFatalError from any block propagates up — batch must stop
+  let acc: AccumulatedAnalysis = { characters: [], items: [], key_events: [], character_updates: [], events: [], entity_updates: [] };
   let lastSummaries: AnalysisResult["summaries"] = { ultra: "", short: "", medium: "" };
 
   for (let i = 0; i < blocks.length; i++) {
@@ -634,7 +750,6 @@ async function llmAnalyze(
     const result = await llmAnalyzeBlock(
       chapter, lang, knownEntities, blocks[i], passType, acc.key_events, client,
     );
-    if (!result) continue;
     acc = mergeAccumulated(acc, result);
     if (passType === "final" && result.summaries) lastSummaries = result.summaries;
   }
@@ -646,6 +761,7 @@ async function llmAnalyze(
     key_events: acc.key_events,
     character_updates: acc.character_updates,
     events: acc.events,
+    entity_updates: acc.entity_updates,
   };
 }
 
@@ -931,6 +1047,7 @@ export async function analyzeChapter(
   try {
     result = await llmAnalyze(chapter, onBlockProgress);
   } catch (e) {
+    if (e instanceof AnalysisFatalError) throw e; // let batch handler catch this
     const msg = e instanceof LlmError ? e.userMessage : String(e);
     onError?.(msg);
     onStatus?.("error");
@@ -1183,6 +1300,17 @@ export async function analyzeChapter(
         };
         await db.events.add(newEvent);
         eventIds.push(newEvent.id);
+
+        // Embed new event for RAG retrieval (best-effort)
+        const eventEmbedder = await getEmbedder();
+        if (eventEmbedder) {
+          const eventText = [newEvent.what, newEvent.how, newEvent.why, newEvent.where]
+            .filter(Boolean).join(" ");
+          try {
+            const [emb] = await eventEmbedder([eventText]);
+            await db.events.update(newEvent.id, { embedding: emb });
+          } catch {}
+        }
       }
     }
   }
@@ -1190,6 +1318,34 @@ export async function analyzeChapter(
   // Update chapter with event IDs
   if (eventIds.length > 0) {
     await db.chapters.update(chapter.id, { event_ids: eventIds });
+  }
+
+  // Process entity state updates (location / item arcs)
+  for (const update of result.entity_updates ?? []) {
+    if (!update.name || !update.state_note) continue;
+    const entity = entityByKey.get(update.name.toLowerCase());
+    if (!entity || (entity.type !== "location" && entity.type !== "item")) continue;
+
+    let ext: EntityExtended | undefined = await db.entities_extended.get(entity.id);
+    if (!ext) {
+      ext = { id: entity.id, work_id: chapter.work_id, state_snapshots: [] };
+      await db.entities_extended.add(ext);
+    }
+
+    const existingIdx = ext.state_snapshots.findIndex(s => s.at_chapter === chapter.chapter_number);
+    const snapshot: EntityStateSnapshot = {
+      at_chapter: chapter.chapter_number,
+      state_note: update.state_note,
+      controller: update.controller,
+      holder: update.holder,
+      status: update.status,
+    };
+
+    const snapshots = [...ext.state_snapshots];
+    if (existingIdx >= 0) snapshots[existingIdx] = snapshot;
+    else snapshots.push(snapshot);
+
+    await db.entities_extended.update(entity.id, { state_snapshots: snapshots });
   }
 
   // Step 2: Update character profiles for appearing characters (best-effort)
@@ -1201,6 +1357,79 @@ export async function analyzeChapter(
   await embedChapter(chapter.id).catch(() => {});
 
   onStatus?.("done");
+}
+
+/**
+ * Resets analysis data for chapters >= from_chapter.
+ * Used for re-parse: "from_chapter=1" clears everything; "from_chapter=N" clears from N onward.
+ * Raw chapter text and chunks (text) are preserved; only derived/analysis data is removed.
+ */
+export async function clearWorkAnalysis(work_id: string, from_chapter = 1): Promise<void> {
+  const chapters = await db.chapters
+    .where("work_id").equals(work_id)
+    .filter(c => c.chapter_number >= from_chapter)
+    .toArray();
+  const chapterIds = new Set(chapters.map(c => c.id));
+
+  // Reset chapter analysis fields (keep full_text, title, chapter_number)
+  await Promise.all(chapters.map(ch => db.chapters.update(ch.id, {
+    summary_ultra: "", summary_short: "", summary_medium: "",
+    appearing_characters: [], mentioned_items: [], key_events: [],
+    event_ids: undefined, embedding_summary: undefined,
+  })));
+
+  // Delete entities whose first appearance is in the reset range
+  const deleteEntities = await db.entities
+    .where("work_id").equals(work_id)
+    .filter(e => e.first_appearance != null && e.first_appearance >= from_chapter)
+    .toArray();
+  const deleteIds = deleteEntities.map(e => e.id);
+  await db.entities.bulkDelete(deleteIds);
+  await db.characters_extended.bulkDelete(deleteIds);
+  await db.entities_extended.bulkDelete(deleteIds);
+
+  // Trim state_snapshots on surviving entities
+  const surviving = await db.entities.where("work_id").equals(work_id).toArray();
+  await Promise.all(surviving.flatMap(entity => {
+    const tasks: Promise<unknown>[] = [];
+    tasks.push(
+      db.characters_extended.get(entity.id).then(ext => {
+        if (!ext) return;
+        const trimmed = ext.state_snapshots.filter(s => s.at_chapter < from_chapter);
+        if (trimmed.length !== ext.state_snapshots.length)
+          return db.characters_extended.update(entity.id, { state_snapshots: trimmed });
+      }),
+      db.entities_extended.get(entity.id).then(ext => {
+        if (!ext) return;
+        const trimmed = ext.state_snapshots.filter(s => s.at_chapter < from_chapter);
+        if (trimmed.length !== ext.state_snapshots.length)
+          return db.entities_extended.update(entity.id, { state_snapshots: trimmed });
+      }),
+    );
+    return tasks;
+  }));
+
+  // Delete events first appearing in reset range
+  await db.events
+    .where("work_id").equals(work_id)
+    .filter(e => e.first_chapter >= from_chapter)
+    .delete();
+
+  // Trim occurrences from older events that reference reset chapters
+  const olderEvents = await db.events.where("work_id").equals(work_id).toArray();
+  await Promise.all(olderEvents.map(event => {
+    const trimmed = event.occurrences.filter(o => !chapterIds.has(o.chapter_id));
+    if (trimmed.length !== event.occurrences.length)
+      return db.events.update(event.id, { occurrences: trimmed });
+  }));
+
+  // Reset chunk derived data (keep text)
+  const allChunkIds = (await Promise.all(
+    [...chapterIds].map(cid => db.chunks.where("chapter_id").equals(cid).toArray())
+  )).flat();
+  await Promise.all(allChunkIds.map(c => db.chunks.update(c.id, {
+    characters_present: [], events: [], items: [], embedding: undefined,
+  })));
 }
 
 export async function embedChapter(chapter_id: string): Promise<void> {

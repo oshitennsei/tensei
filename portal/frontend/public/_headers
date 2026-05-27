@@ -1,0 +1,20 @@
+# Fingerprinted assets — content hash in filename, safe to cache forever
+/app/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service worker — must always revalidate so updates are picked up immediately
+/app/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/app/workbox-*.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# HTML entry points — always revalidate
+/app/index.html
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache

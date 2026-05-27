@@ -1,5 +1,5 @@
 import { db } from "@/lib/storage";
-import type { Chunk, Entity, Chapter, Language } from "@/lib/storage";
+import type { Chunk, Entity, Chapter, Event, Language } from "@/lib/storage";
 import { getEmbedder } from "@/lib/embedding";
 import { getStrings, langFromStorage } from "@/lib/i18n";
 
@@ -221,6 +221,40 @@ async function retrieveChunksHybrid(
     .slice(0, top_k);
 }
 
+async function retrieveEvents(
+  work_id: string,
+  query: string,
+  queryEmbedding: Float32Array | null,
+  cutoff_chapter: number,
+  top_k = 3,
+): Promise<Event[]> {
+  const events = await db.events
+    .where("work_id").equals(work_id)
+    .filter(e => e.first_chapter <= cutoff_chapter)
+    .toArray();
+
+  const queryTokens = tokenize(query);
+  const KEYWORD_WEIGHT = 0.35;
+  const EMBEDDING_WEIGHT = 0.65;
+
+  return events
+    .map(e => {
+      const text = [e.what, e.how, e.why, e.where, e.consequences?.join(" ")].filter(Boolean).join(" ");
+      const kwScore = keywordScore(queryTokens, text);
+      let embScore = 0;
+      if (queryEmbedding) {
+        const emb = toFloat32Array(e.embedding);
+        if (emb) embScore = Math.max(0, cosineSimilarity(queryEmbedding, emb));
+      }
+      const score = queryEmbedding ? EMBEDDING_WEIGHT * embScore + KEYWORD_WEIGHT * kwScore : kwScore;
+      return { event: e, score };
+    })
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, top_k)
+    .map(r => r.event);
+}
+
 export async function buildContext(
   work_id: string,
   character_id: string,
@@ -238,9 +272,10 @@ export async function buildContext(
     try { [queryEmbedding] = await embedder([query]); } catch {}
   }
 
-  const [chunks, relatedEntities, character, characterExt, allChapters] = await Promise.all([
+  const [chunks, relatedEntities, relatedEvents, character, characterExt, allChapters] = await Promise.all([
     retrieveChunksHybrid(work_id, query, queryEmbedding, cutoff_chapter, top_k, character_id),
     retrieveEntities(work_id, query, 5),
+    retrieveEvents(work_id, query, queryEmbedding, cutoff_chapter, 3),
     db.entities.get(character_id),
     db.characters_extended.get(character_id),
     db.chapters
@@ -296,6 +331,19 @@ export async function buildContext(
       return lines.join("\n");
     });
     parts.push(`${s.rag_related_events}\n${storyLines.join("\n\n")}`);
+  }
+
+  // Related events (5W1H structured)
+  if (relatedEvents.length > 0) {
+    const eventLines = relatedEvents.map(e => {
+      const lines = [`【${e.what}】（第${e.first_chapter}章）`];
+      if (e.how)  lines.push(`  手段: ${e.how}`);
+      if (e.why)  lines.push(`  理由: ${e.why}`);
+      if (e.where) lines.push(`  場所: ${e.where}`);
+      if (e.consequences?.length) lines.push(`  結果: ${e.consequences.join("、")}`);
+      return lines.join("\n");
+    });
+    parts.push(`## 関連する事件\n${eventLines.join("\n\n")}`);
   }
 
   // Related entities (exclude the character itself)

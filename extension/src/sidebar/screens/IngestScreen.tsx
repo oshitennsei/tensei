@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "../components/Button";
-import { getOrCreateWork, ingestPastedText, ingestKakuyomuWork, ingestSyosetsuWork, listWorks, listChapters } from "@/lib/ingestion";
+import { getOrCreateWork, ingestPastedText, ingestKakuyomuWork, ingestSyosetsuWork, listWorks, listChapters, clearWorkAnalysis, AnalysisFatalError } from "@/lib/ingestion";
 import type { AnalysisStatus } from "@/lib/ingestion";
 import type { Work } from "@/lib/storage";
 import { useStrings } from "@/lib/i18n";
@@ -91,6 +91,7 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
   const [batchDone, setBatchDone] = useState(0);
   const [batchCurrent, setBatchCurrent] = useState("");
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
+  const [batchAbortedAt, setBatchAbortedAt] = useState<number | null>(null); // index in batchFiles
   const [dragOver, setDragOver] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
@@ -338,14 +339,15 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
   };
   const handleDragEnd = () => { setDragOver(null); dragIndexRef.current = null; };
 
-  const handleBatchStart = async () => {
+  const handleBatchStart = async (startFromIndex = 0) => {
     if (!work || batchFiles.length === 0) return;
     abortRef.current = false;
-    setBatchDone(0);
+    setBatchDone(startFromIndex);
     setBatchErrors([]);
+    setBatchAbortedAt(null);
     setStep("batch-run");
 
-    for (let i = 0; i < batchFiles.length; i++) {
+    for (let i = startFromIndex; i < batchFiles.length; i++) {
       if (abortRef.current) break;
       const pf = batchFiles[i];
       setBatchCurrent(str.chapter_label(pf.globalChapter, pf.title));
@@ -362,6 +364,12 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
         );
         if (errs.length > 0) setBatchErrors(prev => [...prev, ...errs]);
       } catch (err) {
+        if (err instanceof AnalysisFatalError) {
+          setBatchErrors(prev => [...prev, `第${pf.globalChapter}章「${pf.title}」: 3回連続失敗のため中断`]);
+          setBatchAbortedAt(i);
+          setBatchCurrent("");
+          return;
+        }
         setBatchErrors(prev => [...prev, String(err)]);
       }
       setBatchDone(i + 1);
@@ -925,7 +933,7 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
                     </li>
                   ))}
                 </ul>
-                <Button className="w-full" onClick={handleBatchStart}>
+                <Button className="w-full" onClick={() => handleBatchStart()}>
                   {str.ingest_start_batch(batchFiles.length)}
                 </Button>
               </div>
@@ -972,7 +980,38 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
               </div>
             )}
 
-            {!batchFinished && (
+            {!batchFinished && batchAbortedAt !== null && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-red-600 font-medium">
+                  第{batchFiles[batchAbortedAt].globalChapter}章で3回連続失敗 — 後続の解析は中断されました
+                </p>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    className="w-full"
+                    onClick={async () => {
+                      if (!work) return;
+                      await clearWorkAnalysis(work.id, batchFiles[batchAbortedAt!].globalChapter);
+                      handleBatchStart(batchAbortedAt!);
+                    }}
+                  >
+                    第{batchFiles[batchAbortedAt].globalChapter}章から再開
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={async () => {
+                      if (!work) return;
+                      await clearWorkAnalysis(work.id, 1);
+                      handleBatchStart(0);
+                    }}
+                  >
+                    最初から全て再解析
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!batchFinished && batchAbortedAt === null && (
               <Button variant="ghost" className="w-full" onClick={() => { abortRef.current = true; }}>
                 {str.ingest_abort}
               </Button>
