@@ -10,6 +10,35 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.1",
+    changes: {
+      ja: [
+        "⚡ 小説の解析速度を大幅に改善",
+        "🛠 各種画面の表示・操作の不具合を修正",
+        "🔭【次バージョン予告】キャラクターが未来の展開を知る問題を根本解決するため新解析方式を研究中。既存の解析データと非互換になる可能性があります",
+        "📱【次バージョン予告】Web版とChrome拡張版のデータ形式を統一予定。PCで解析→エクスポート→スマホのWeb版に転送して続きを楽しめるようになります",
+      ],
+      "zh-tw": [
+        "⚡ 大幅提升小說解析速度",
+        "🛠 修正多項畫面顯示與操作問題",
+        "🔭【下一版本預告】為根本解決角色預知未來劇情的問題，正在研究新解析方式。現有解析資料可能不完全相容",
+        "📱【下一版本預告】網頁版與Chrome擴充版資料格式將統一。可在PC完成耗時解析後匯出，轉到手機網頁版繼續使用",
+      ],
+      "zh-cn": [
+        "⚡ 大幅提升小说解析速度",
+        "🛠 修复多处界面显示与操作问题",
+        "🔭【下一版本预告】为根本解决角色预知未来剧情的问题，正在研究新解析方式。现有解析数据可能不完全兼容",
+        "📱【下一版本预告】网页版与Chrome扩展版数据格式将统一。可在PC完成耗时解析后导出，转到手机网页版继续使用",
+      ],
+      en: [
+        "⚡ Significantly improved novel analysis speed",
+        "🛠 Fixed various screen display and UI issues",
+        "🔭 [Next version preview] Researching a new analysis method to fundamentally solve the character-foreknowledge problem. Existing analyzed data may not be fully compatible",
+        "📱 [Next version preview] Web and Chrome extension will share the same data format — analyze on PC, export, then continue on mobile web",
+      ],
+    },
+  },
+  {
     version: "0.3.0",
     changes: {
       ja: [

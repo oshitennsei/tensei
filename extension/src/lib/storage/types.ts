@@ -248,6 +248,7 @@ export interface EstablishedFact {
 
 export interface Session {
   id: string;
+  title?: string;
   work_id: string;
   character_id: string;
   mode: SessionMode;
@@ -425,6 +426,7 @@ export interface GeneratedSegment {
 
 export interface PerformanceSession {
   id: string;
+  title?: string;
   work_id: string;
   mode: PerformanceMode;
   template_id: string;

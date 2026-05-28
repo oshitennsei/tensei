@@ -1,8 +1,53 @@
 import { useState, useEffect, useRef } from "react";
-import { Button } from "../components/Button";
 import { db } from "@/lib/storage";
 import type { Work, Entity, CharacterExtended, GlossaryEntry } from "@/lib/storage";
 import { useStrings } from "@/lib/i18n";
+
+// ─── Palette ─────────────────────────────────────────────────────────────────
+const C = {
+  bg:          "#080a14",
+  cardBg:      "rgba(13,13,36,0.82)",
+  border:      "rgba(99,102,241,0.18)",
+  borderHover: "rgba(99,102,241,0.45)",
+  indigo:      "#818cf8",
+  indigoDim:   "rgba(99,102,241,0.12)",
+  text:        "#e2e8f0",
+  muted:       "#64748b",
+  mutedLight:  "#94a3b8",
+  danger:      "rgba(239,68,68,0.85)",
+};
+
+function charHue(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+  return h;
+}
+
+function IconBtn({ onClick, icon, title }: { onClick: () => void; icon: string; title?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all duration-150"
+      style={{ color: C.muted }}
+      onMouseEnter={e => { e.currentTarget.style.color = C.indigo; e.currentTarget.style.background = C.indigoDim; }}
+      onMouseLeave={e => { e.currentTarget.style.color = C.muted; e.currentTarget.style.background = "transparent"; }}
+    >
+      {icon}
+    </button>
+  );
+}
+
+function Badge({ label, color, bg, border }: { label: string; color: string; bg: string; border: string }) {
+  return (
+    <span
+      className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+      style={{ color, background: bg, border: `1px solid ${border}` }}
+    >
+      {label}
+    </span>
+  );
+}
 
 interface Props {
   work: Work;
@@ -133,14 +178,12 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-
     let json: Record<string, unknown>;
     try {
       json = JSON.parse(await file.text());
     } catch {
       setImportError(str.char_json_error); return;
     }
-
     await importFromJson(json);
   };
 
@@ -175,7 +218,7 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
             });
           }
         } catch {
-          // Authorization fetch is best-effort; don't fail the import
+          // Best-effort
         }
       }
 
@@ -189,79 +232,186 @@ export function CharacterScreen({ work, onBack, onEdit, onAdd }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 shrink-0">
-        <Button variant="ghost" size="sm" onClick={onBack}>←</Button>
-        <h2 className="text-sm font-semibold flex-1">{str.char_mgmt_title}</h2>
-        <Button variant="ghost" size="sm" onClick={() => setShowUrlImport(p => !p)}>{str.char_url_import}</Button>
-        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>{str.char_json_import}</Button>
-        <Button size="sm" onClick={onAdd}>{str.char_add}</Button>
-        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+    <div className="flex flex-col h-full" style={{ background: C.bg, color: C.text }}>
+      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+
+      {/* ── Header ── */}
+      <header
+        className="flex items-center gap-2 px-3 py-2 shrink-0"
+        style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(8,10,20,0.97)" }}
+      >
+        <IconBtn onClick={onBack} icon="←" />
+        <h2 className="flex-1 text-sm font-semibold truncate" style={{ color: C.text }}>
+          {str.char_mgmt_title}
+        </h2>
+        <IconBtn
+          onClick={() => { setShowUrlImport(p => !p); setImportError(""); setImportOk(""); }}
+          icon="🔗"
+          title={str.char_url_import}
+        />
+        <IconBtn
+          onClick={() => fileInputRef.current?.click()}
+          icon="📂"
+          title={str.char_json_import}
+        />
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+          style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white" }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+        >
+          ＋ {str.char_add}
+        </button>
       </header>
 
+      {/* ── URL import bar ── */}
       {showUrlImport && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50">
+        <div
+          className="flex items-center gap-2 px-3 py-2 shrink-0"
+          style={{ background: "rgba(13,13,36,0.92)", borderBottom: `1px solid ${C.border}` }}
+        >
           <input
-            className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-xs"
+            className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none"
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: `1px solid ${C.border}`,
+              color: C.text,
+            }}
             placeholder="GitHub raw URL"
             value={urlInput}
             onChange={e => setUrlInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") handleUrlImport(); }}
+            onFocus={e => { e.currentTarget.style.borderColor = C.indigo; }}
+            onBlur={e => { e.currentTarget.style.borderColor = C.border; }}
           />
-          <Button size="sm" onClick={handleUrlImport} disabled={urlImporting || !urlInput.trim()}>
+          <button
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+            style={{ background: C.indigoDim, border: `1px solid ${C.border}`, color: C.indigo }}
+            onClick={handleUrlImport}
+            disabled={urlImporting || !urlInput.trim()}
+            onMouseEnter={e => { if (!urlImporting) e.currentTarget.style.background = "rgba(99,102,241,0.22)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = C.indigoDim; }}
+          >
             {urlImporting ? str.char_loading : str.char_load_btn}
-          </Button>
+          </button>
         </div>
       )}
 
+      {/* ── Status message ── */}
       {(importError || importOk) && (
-        <div className={`mx-4 mt-2 px-3 py-1.5 rounded text-xs ${importError ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
+        <div
+          className="mx-3 mt-2 px-3 py-2 rounded-lg text-xs shrink-0"
+          style={{
+            background: importError ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
+            border: `1px solid ${importError ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"}`,
+            color: importError ? "rgba(252,165,165,0.9)" : "rgba(110,231,183,0.9)",
+          }}
+        >
           {importError || importOk}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      {/* ── Character list ── */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
         {characters.length === 0 ? (
-          <div className="text-center text-sm text-gray-400 mt-12 px-4 space-y-2">
-            <p>{str.char_empty}</p>
-            <p className="text-xs">{str.char_empty_desc}</p>
+          <div className="flex flex-col items-center justify-center h-full pb-16 gap-3">
+            <div className="text-4xl opacity-20">👥</div>
+            <p className="text-sm" style={{ color: C.muted }}>{str.char_empty}</p>
+            <p className="text-xs" style={{ color: C.muted }}>{str.char_empty_desc}</p>
           </div>
         ) : (
-          <ul className="divide-y divide-gray-100">
-            {characters.map(c => (
-              <li key={c.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold shrink-0">
+          characters.map(c => {
+            const hue = charHue(c.id);
+            return (
+              <div
+                key={c.id}
+                className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-150"
+                style={{ background: C.cardBg, border: `1px solid ${C.border}` }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.borderHover; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; }}
+              >
+                {/* Avatar */}
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold shrink-0"
+                  style={{
+                    background: `hsl(${hue},40%,16%)`,
+                    border: `1.5px solid hsl(${hue},50%,32%)`,
+                    color: `hsl(${hue},70%,68%)`,
+                  }}
+                >
                   {c.canonical_name.slice(0, 1)}
                 </div>
+
+                {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{c.canonical_name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-sm font-semibold truncate" style={{ color: C.text }}>
+                    {c.canonical_name}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
                     {c.first_appearance != null && (
-                      <span className="text-xs text-gray-400">{str.char_first_appear(c.first_appearance)}</span>
-                    )}
-                    {!extIds.has(c.id) && (
-                      <span className="text-xs text-amber-600 bg-amber-50 rounded px-1.5 py-0.5">
-                        {str.char_no_persona}
+                      <span className="text-xs" style={{ color: C.muted }}>
+                        {str.char_first_appear(c.first_appearance)}
                       </span>
                     )}
-                    {authorProvidedIds.has(c.id) && (
-                      <span className="text-xs text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">{str.char_official}</span>
-                    )}
                     {authorProvidedIds.has(c.id) && verifiedWorkIds.size > 0 && (
-                      <span className="text-xs text-green-600 bg-green-50 rounded px-1.5 py-0.5">{str.char_verified}</span>
+                      <Badge
+                        label={str.char_verified}
+                        color="rgba(110,231,183,0.95)"
+                        bg="rgba(16,185,129,0.12)"
+                        border="rgba(16,185,129,0.28)"
+                      />
+                    )}
+                    {authorProvidedIds.has(c.id) && (
+                      <Badge
+                        label={str.char_official}
+                        color={C.indigo}
+                        bg={C.indigoDim}
+                        border="rgba(99,102,241,0.28)"
+                      />
+                    )}
+                    {!extIds.has(c.id) && (
+                      <Badge
+                        label={str.char_no_persona}
+                        color="rgba(251,191,36,0.9)"
+                        bg="rgba(245,158,11,0.1)"
+                        border="rgba(245,158,11,0.25)"
+                      />
                     )}
                   </div>
                   {c.description && (
-                    <p className="text-xs text-gray-500 truncate mt-0.5">{c.description}</p>
+                    <p className="text-xs truncate mt-0.5" style={{ color: C.muted }}>
+                      {c.description}
+                    </p>
                   )}
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(c.id)}>{str.char_edit}</Button>
-                  <Button variant="danger" size="sm" onClick={() => handleDelete(c.id)}>{str.char_delete}</Button>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-all"
+                    style={{ color: C.muted }}
+                    onMouseEnter={e => { e.currentTarget.style.color = C.indigo; e.currentTarget.style.background = C.indigoDim; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = C.muted; e.currentTarget.style.background = "transparent"; }}
+                    onClick={() => onEdit(c.id)}
+                    title={str.char_edit}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-all"
+                    style={{ color: C.muted }}
+                    onMouseEnter={e => { e.currentTarget.style.color = C.danger; e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = C.muted; e.currentTarget.style.background = "transparent"; }}
+                    onClick={() => handleDelete(c.id)}
+                    title={str.char_delete}
+                  >
+                    ✕
+                  </button>
                 </div>
-              </li>
-            ))}
-          </ul>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

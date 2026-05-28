@@ -52,6 +52,7 @@ interface Props {
   onBack: () => void;
   onDone: (work: Work, chapter_number: number) => void;
   onWorkRegister: (workUrl?: string) => void;
+  initialWork?: Work;
 }
 
 interface KkEpisodeItem {
@@ -72,11 +73,11 @@ type Step = "pick" | "new-work" | "mode" | "chapter" | "batch-select" | "batch-r
   | "kakuyomu-check" | "kakuyomu-unauthorized" | "kakuyomu-select" | "kakuyomu-run"
   | "syosetu-check" | "syosetu-unauthorized" | "syosetu-select" | "syosetu-run";
 
-export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
+export function IngestScreen({ onBack, onDone, onWorkRegister, initialWork }: Props) {
   const str = useStrings();
-  const [step, setStep] = useState<Step>("pick");
+  const [step, setStep] = useState<Step>(initialWork ? "mode" : "pick");
   const [works, setWorks] = useState<Work[]>([]);
-  const [work, setWork] = useState<Work | null>(null);
+  const [work, setWork] = useState<Work | null>(initialWork ?? null);
   const [nextChapter, setNextChapter] = useState(1);
   const [workForm, setWorkForm] = useState({
     title: "", author: "",
@@ -121,6 +122,15 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
   const ssTabIdRef = useRef<number | null>(null);
 
   useEffect(() => { listWorks().then(setWorks); }, []);
+
+  useEffect(() => {
+    if (!initialWork) return;
+    listChapters(initialWork.id).then(chapters => {
+      const next = chapters.length > 0 ? Math.max(...chapters.map(c => c.chapter_number)) + 1 : 1;
+      setNextChapter(next);
+      setChapterForm(f => ({ ...f, chapter_number: next, title: "", full_text: "" }));
+    });
+  }, []);
 
   // Detect platform — extracted so it can be called on mount AND on tab navigation
   const detectPlatformRef = useRef<((url: string, tabId: number) => Promise<void>) | null>(null);
@@ -444,7 +454,7 @@ export function IngestScreen({ onBack, onDone, onWorkRegister }: Props) {
     } else if (step === "syosetu-run") {
       ssAbortRef.current = true; setStep("syosetu-select");
     } else if (step === "chapter" || step === "mode" || step === "batch-select") {
-      setStep("pick"); setWork(null); setError("");
+      if (initialWork) { onBack(); } else { setStep("pick"); setWork(null); setError(""); }
     } else if (step === "new-work") {
       setStep("pick"); setError("");
     } else if (step === "batch-run") {

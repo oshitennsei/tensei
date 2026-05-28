@@ -37,9 +37,10 @@ interface ImportState {
 
 interface Props {
   onBack: () => void;
+  initialWork?: Work;
 }
 
-export function DebugScreen({ onBack }: Props) {
+export function DebugScreen({ onBack, initialWork }: Props) {
   const str = useStrings();
   const [works, setWorks] = useState<Work[]>([]);
   const [selectedWork, setSelectedWork] = useState<Work | null>(null);
@@ -59,7 +60,12 @@ export function DebugScreen({ onBack }: Props) {
   const abortRef = useRef(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { listWorks().then(setWorks); }, []);
+  useEffect(() => {
+    listWorks().then(ws => {
+      setWorks(ws);
+      if (initialWork) setSelectedWork(initialWork);
+    });
+  }, []);
 
   useEffect(() => {
     if (!selectedWork) {

@@ -153,6 +153,8 @@ class TenseiDb extends Dexie {
     this.version(21).stores({
       entities_extended: "&id, work_id",
     });
+
+    this.version(22).stores({});  // title added to Session and PerformanceSession
   }
 }
 

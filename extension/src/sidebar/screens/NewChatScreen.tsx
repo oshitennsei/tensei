@@ -10,12 +10,13 @@ interface Props {
   work: Work;
   onBack: () => void;
   onStart: (session: Session) => void;
+  initialCharId?: string;
 }
 
-export function NewChatScreen({ work, onBack, onStart }: Props) {
+export function NewChatScreen({ work, onBack, onStart, initialCharId }: Props) {
   const str = useStrings();
   const [characters, setCharacters] = useState<Entity[]>([]);
-  const [selectedChar, setSelectedChar] = useState<string>("");
+  const [selectedChar, setSelectedChar] = useState<string>(initialCharId ?? "");
   const [selectedVersion, setSelectedVersion] = useState<string>("base");
   const [charExt, setCharExt] = useState<CharacterExtended | null>(null);
   const [cutoff, setCutoff] = useState(1);
@@ -50,7 +51,9 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
   useEffect(() => {
     if (visibleChars.length === 0) { setSelectedChar(""); return; }
     if (!visibleChars.find(c => c.id === selectedChar)) {
-      setSelectedChar(visibleChars[0].id);
+      // Prefer initialCharId if it's in range, otherwise fall back to first
+      const preferred = initialCharId && visibleChars.find(c => c.id === initialCharId);
+      setSelectedChar(preferred ? preferred.id : visibleChars[0].id);
     }
   }, [visibleChars]);
 
@@ -59,11 +62,13 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
     [charExt]
   );
 
-  const handleStart = async () => {
-    if (!selectedChar || starting) return;
+  const handleStart = async (charIdOverride?: string) => {
+    const charId = charIdOverride ?? selectedChar;
+    if (!charId || starting) return;
+    if (charIdOverride) setSelectedChar(charIdOverride);
     setStarting(true);
     const versionId = selectedVersion === "base" ? undefined : selectedVersion;
-    const session = await createNewSession(work.id, selectedChar, cutoff, "reader", versionId);
+    const session = await createNewSession(work.id, charId, cutoff, "reader", versionId);
     onStart(session);
   };
 
@@ -113,6 +118,7 @@ export function NewChatScreen({ work, onBack, onStart }: Props) {
                 <button
                   key={c.id}
                   onClick={() => setSelectedChar(c.id)}
+                  onDoubleClick={() => handleStart(c.id)}
                   className={`w-full text-left px-3 py-2.5 rounded border text-sm transition-colors ${
                     selectedChar === c.id
                       ? "border-indigo-500 bg-indigo-50"

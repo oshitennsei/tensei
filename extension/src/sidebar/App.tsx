@@ -40,26 +40,55 @@ function openGuide() {
 function saveCurrentVersion() {
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     chrome.storage.local.set({ tensei_version: __APP_VERSION__ });
+  } else {
+    localStorage.setItem("tensei_version", __APP_VERSION__);
   }
 }
 
 function WelcomeDialog({ onViewNow, onLater }: { onViewNow: () => void; onLater: () => void }) {
   const str = useStrings();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-        <h2 className="text-base font-semibold text-gray-800">{str.welcome_title}</h2>
-        <p className="text-sm text-gray-600 leading-relaxed">{str.welcome_body}</p>
-        <div className="flex gap-2 justify-end pt-1">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.78)", backdropFilter: "blur(6px)" }}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl overflow-hidden"
+        style={{
+          background: "linear-gradient(160deg, rgba(15,12,41,0.99) 0%, rgba(8,10,20,0.99) 100%)",
+          border: "1px solid rgba(99,102,241,0.32)",
+          boxShadow: "0 0 80px rgba(99,102,241,0.13), 0 30px 60px rgba(0,0,0,0.8)",
+        }}
+      >
+        <div className="relative flex flex-col items-center pt-8 pb-5 px-6">
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.14) 0%, transparent 65%)" }}
+          />
+          <div className="text-4xl mb-3 relative">🏫</div>
+          <h2 className="text-lg font-bold text-center relative" style={{ color: "#e2e8f0" }}>
+            {str.welcome_title}
+          </h2>
+          <p className="text-sm text-center leading-relaxed mt-2 relative" style={{ color: "#94a3b8" }}>
+            {str.welcome_body}
+          </p>
+        </div>
+        <div className="flex gap-2 px-5 pb-5">
           <button
             onClick={onLater}
-            className="px-4 py-2 rounded text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all"
+            style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", color: "#94a3b8" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.15)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.08)"; }}
           >
             {str.welcome_later}
           </button>
           <button
             onClick={onViewNow}
-            className="px-4 py-2 rounded text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all"
+            style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white" }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = "0.88"; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
           >
             {str.welcome_view_now}
           </button>
@@ -74,21 +103,50 @@ function WhatsNewDialog({ lang, onClose }: { lang: UILanguage; onClose: () => vo
   const entry = CHANGELOG.find(e => e.version === __APP_VERSION__);
   const items = entry ? (entry.changes[lang as keyof typeof entry.changes] ?? entry.changes["en"]) : [];
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-        <h2 className="text-base font-semibold text-gray-800">{str.whats_new_title(__APP_VERSION__)}</h2>
-        <ul className="space-y-2">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.78)", backdropFilter: "blur(6px)" }}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl overflow-hidden"
+        style={{
+          background: "linear-gradient(160deg, rgba(15,12,41,0.99) 0%, rgba(8,10,20,0.99) 100%)",
+          border: "1px solid rgba(99,102,241,0.32)",
+          boxShadow: "0 0 80px rgba(99,102,241,0.13), 0 30px 60px rgba(0,0,0,0.8)",
+        }}
+      >
+        <div
+          className="relative px-5 pt-5 pb-4"
+          style={{ borderBottom: "1px solid rgba(99,102,241,0.12)" }}
+        >
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.1) 0%, transparent 70%)" }}
+          />
+          <span
+            className="relative text-xs px-2 py-0.5 rounded-full font-bold tracking-widest"
+            style={{ background: "rgba(99,102,241,0.18)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)" }}
+          >
+            UPDATE
+          </span>
+          <p className="relative mt-2 text-lg font-bold" style={{ color: "#e2e8f0" }}>
+            {str.whats_new_title(__APP_VERSION__)}
+          </p>
+        </div>
+        <ul className="px-5 py-4 space-y-3">
           {items.map((item, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-              <span className="text-indigo-500 mt-0.5 shrink-0">✦</span>
-              <span>{item}</span>
+            <li key={i} className="text-sm leading-snug" style={{ color: "rgba(226,232,240,0.85)" }}>
+              {item}
             </li>
           ))}
         </ul>
-        <div className="flex justify-end pt-1">
+        <div className="px-5 pb-5">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+            className="w-full py-2.5 rounded-xl text-sm font-bold transition-all"
+            style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white" }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = "0.88"; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
           >
             {str.whats_new_close}
           </button>
@@ -101,7 +159,7 @@ function WhatsNewDialog({ lang, onClose }: { lang: UILanguage; onClose: () => vo
 type Screen =
   | { name: "home" }
   | { name: "work"; work: Work }
-  | { name: "new-chat"; work: Work }
+  | { name: "new-chat"; work: Work; initialCharId?: string }
   | { name: "chat"; work: Work; session: Session }
   | { name: "characters"; work: Work }
   | { name: "character-edit"; work: Work; character_id: string | null }
@@ -110,8 +168,8 @@ type Screen =
   | { name: "events"; work: Work }
   | { name: "settings" }
   | { name: "persona" }
-  | { name: "ingest" }
-  | { name: "debug" }
+  | { name: "ingest"; returnWork?: Work }
+  | { name: "debug"; work?: Work }
   | { name: "performance-setup"; work: Work }
   | { name: "scene-brief"; work: Work; session: PerformanceSession }
   | { name: "production-plan"; work: Work; session: PerformanceSession; plan: ProductionPlan }
@@ -196,32 +254,38 @@ function AppContent() {
       window.history.replaceState({}, "", "/");
       return;
     }
-    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
-    chrome.storage.local.get(["pending_model", "tensei_version"], async (result) => {
-      // Model saved from portal guide (externally_connectable path)
-      const m = result["pending_model"];
-      if (m) {
-        chrome.storage.local.remove("pending_model");
-        await db.open();
-        const id = await saveModel(m);
-        for (const role of ["main", "sub_agent", "compression", "plan", "scene"] as const) {
-          await setRoleAssignment(role, id);
-        }
-        setScreen({ name: "settings" });
-        saveCurrentVersion();
-        return;
-      }
-      const stored = result["tensei_version"] as string | undefined;
+
+    const checkVersion = (stored: string | undefined) => {
       if (!stored) {
-        // First install
         setShowWelcome(true);
       } else if (stored !== __APP_VERSION__) {
-        // Version updated — show What's New only if changelog entry exists
         const hasEntry = CHANGELOG.some(e => e.version === __APP_VERSION__);
         if (hasEntry) setShowWhatsNew(true);
         else saveCurrentVersion();
       }
-    });
+    };
+
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.get(["pending_model", "tensei_version"], async (result) => {
+        // Model saved from portal guide (externally_connectable path)
+        const m = result["pending_model"];
+        if (m) {
+          chrome.storage.local.remove("pending_model");
+          await db.open();
+          const id = await saveModel(m);
+          for (const role of ["main", "sub_agent", "compression", "plan", "scene"] as const) {
+            await setRoleAssignment(role, id);
+          }
+          setScreen({ name: "settings" });
+          saveCurrentVersion();
+          return;
+        }
+        checkVersion(result["tensei_version"] as string | undefined);
+      });
+    } else {
+      // PWA fallback — use localStorage
+      checkVersion(localStorage.getItem("tensei_version") ?? undefined);
+    }
   }, []);
 
   const content = (() => {
@@ -238,6 +302,8 @@ function AppContent() {
           onWorkDeleted={() => setScreen({ name: "home" })}
           onPerformance={() => setScreen({ name: "performance-setup", work: screen.work })}
           onResumePerformance={session => setScreen({ name: "performance", work: screen.work, session })}
+          onIngest={() => setScreen({ name: "ingest", returnWork: screen.work })}
+          onDataManage={() => setScreen({ name: "debug", work: screen.work })}
         />
       );
     }
@@ -321,6 +387,7 @@ function AppContent() {
           work={screen.work}
           onBack={() => setScreen({ name: "work", work: screen.work })}
           onStart={session => setScreen({ name: "chat", work: screen.work, session })}
+          initialCharId={screen.initialCharId}
         />
       );
     }
@@ -394,16 +461,19 @@ function AppContent() {
       return <PersonaScreen onBack={() => setScreen({ name: "settings" })} />;
     }
     if (screen.name === "ingest") {
+      const backTarget = screen.returnWork ? { name: "work" as const, work: screen.returnWork } : { name: "home" as const };
       return (
         <IngestScreen
-          onBack={() => setScreen({ name: "home" })}
-          onDone={(_work, _ch) => setScreen({ name: "home" })}
+          onBack={() => setScreen(backTarget)}
+          onDone={(_work, _ch) => setScreen(backTarget)}
           onWorkRegister={(workUrl) => setScreen({ name: "work-register", initialWorkUrl: workUrl })}
+          initialWork={screen.returnWork}
         />
       );
     }
     if (screen.name === "debug") {
-      return <DebugScreen onBack={() => setScreen({ name: "settings" })} />;
+      const backTarget = screen.work ? { name: "work" as const, work: screen.work } : { name: "settings" as const };
+      return <DebugScreen onBack={() => setScreen(backTarget)} initialWork={screen.work} />;
     }
     if (screen.name === "work-register") {
       return <WorkRegisterScreen onBack={() => setScreen({ name: "home" })} initialWorkUrl={screen.initialWorkUrl} />;
