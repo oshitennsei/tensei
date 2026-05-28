@@ -5,6 +5,9 @@ import { NewChatScreen } from "./screens/NewChatScreen";
 import { ChatScreen } from "./screens/ChatScreen";
 import { CharacterScreen } from "./screens/CharacterScreen";
 import { CharacterEditScreen } from "./screens/CharacterEditScreen";
+import { EntityScreen } from "./screens/EntityScreen";
+import { EntityEditScreen } from "./screens/EntityEditScreen";
+import { EventScreen } from "./screens/EventScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { PersonaScreen } from "./screens/PersonaScreen";
 import { IngestScreen } from "./screens/IngestScreen";
@@ -102,6 +105,9 @@ type Screen =
   | { name: "chat"; work: Work; session: Session }
   | { name: "characters"; work: Work }
   | { name: "character-edit"; work: Work; character_id: string | null }
+  | { name: "entities"; work: Work }
+  | { name: "entity-edit"; work: Work; entity_id: string | null }
+  | { name: "events"; work: Work }
   | { name: "settings" }
   | { name: "persona" }
   | { name: "ingest" }
@@ -121,6 +127,9 @@ function getWorkId(s: Screen): string | undefined {
     case "chat":
     case "characters":
     case "character-edit":
+    case "entities":
+    case "entity-edit":
+    case "events":
     case "performance-setup":
     case "scene-brief":
     case "production-plan":
@@ -224,6 +233,8 @@ function AppContent() {
           onSelectSession={session => setScreen({ name: "chat", work: screen.work, session })}
           onNewChat={() => setScreen({ name: "new-chat", work: screen.work })}
           onManageCharacters={() => setScreen({ name: "characters", work: screen.work })}
+          onManageEntities={() => setScreen({ name: "entities", work: screen.work })}
+          onManageEvents={() => setScreen({ name: "events", work: screen.work })}
           onWorkDeleted={() => setScreen({ name: "home" })}
           onPerformance={() => setScreen({ name: "performance-setup", work: screen.work })}
           onResumePerformance={session => setScreen({ name: "performance", work: screen.work, session })}
@@ -339,6 +350,34 @@ function AppContent() {
           character_id={screen.character_id}
           onBack={() => setScreen({ name: "characters", work: screen.work })}
           onSaved={() => setScreen({ name: "characters", work: screen.work })}
+        />
+      );
+    }
+    if (screen.name === "entities") {
+      return (
+        <EntityScreen
+          work={screen.work}
+          onBack={() => setScreen({ name: "work", work: screen.work })}
+          onEdit={entity_id => setScreen({ name: "entity-edit", work: screen.work, entity_id })}
+          onAdd={() => setScreen({ name: "entity-edit", work: screen.work, entity_id: null })}
+        />
+      );
+    }
+    if (screen.name === "entity-edit") {
+      return (
+        <EntityEditScreen
+          work={screen.work}
+          entity_id={screen.entity_id}
+          onBack={() => setScreen({ name: "entities", work: screen.work })}
+          onSaved={() => setScreen({ name: "entities", work: screen.work })}
+        />
+      );
+    }
+    if (screen.name === "events") {
+      return (
+        <EventScreen
+          work={screen.work}
+          onBack={() => setScreen({ name: "work", work: screen.work })}
         />
       );
     }

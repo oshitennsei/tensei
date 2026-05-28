@@ -10,6 +10,35 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.0",
+    changes: {
+      ja: [
+        "🔗 ポータル連携 — 作者がキャラクター設定・章サマリーを公開、読者が「作者版を取得」で同期",
+        "✏️ 地名・物品・組織の編集機能を追加、章ごとの状態変化も記録可能に",
+        "🔍 RAG 改善 — アイテムの状態変化（占領・破壊・譲渡）をコンテキストに反映",
+        "🛡️ ネタバレ防止を強化 — 時系列より後の情報がキャラクターに漏れにくくなりました",
+      ],
+      "zh-tw": [
+        "🔗 Portal 連動 — 作者可發布角色設定・章節摘要，讀者可「取得作者版」同步",
+        "✏️ 新增地點・物品・組織的編輯功能，可記錄各章節的狀態變化",
+        "🔍 RAG 改善 — 物品狀態變化（佔領・破壞・轉移）會反映至對話上下文",
+        "🛡️ 強化防雷 — 角色較不易獲知時間線後方的情報",
+      ],
+      "zh-cn": [
+        "🔗 Portal 联动 — 作者可发布角色设定・章节摘要，读者可「获取作者版」同步",
+        "✏️ 新增地点・物品・组织的编辑功能，可记录各章节的状态变化",
+        "🔍 RAG 改善 — 物品状态变化（占领・破坏・转移）会反映至对话上下文",
+        "🛡️ 强化防剧透 — 角色较不易获知时间线后方的情报",
+      ],
+      en: [
+        "🔗 Portal sync — authors can publish character settings & summaries; readers pull with 'Get Author Version'",
+        "✏️ Edit locations, items & orgs — including per-chapter state history (destroyed, captured, transferred, etc.)",
+        "🔍 RAG improvement — item state changes now reflected in character context",
+        "🛡️ Stronger spoiler guard — characters less likely to receive future-timeline information",
+      ],
+    },
+  },
+  {
     version: "0.2.0",
     changes: {
       ja: [

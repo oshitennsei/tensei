@@ -120,9 +120,12 @@ export async function retrieveChunks(
 export async function retrieveEntities(
   work_id: string,
   query: string,
+  cutoff_chapter: number,
   top_k = 5,
 ): Promise<Entity[]> {
-  const entities = await db.entities.where("work_id").equals(work_id).toArray();
+  const entities = await db.entities.where("work_id").equals(work_id)
+    .filter(e => (e.first_appearance ?? 0) <= cutoff_chapter)
+    .toArray();
   const queryTokens = tokenize(query);
   return entities
     .map(e => ({
@@ -272,12 +275,11 @@ export async function buildContext(
     try { [queryEmbedding] = await embedder([query]); } catch {}
   }
 
-  const [chunks, relatedEntities, relatedEvents, character, characterExt, allChapters] = await Promise.all([
+  const [chunks, relatedEntities, relatedEvents, character, allChapters] = await Promise.all([
     retrieveChunksHybrid(work_id, query, queryEmbedding, cutoff_chapter, top_k, character_id),
-    retrieveEntities(work_id, query, 5),
+    retrieveEntities(work_id, query, cutoff_chapter, 5),
     retrieveEvents(work_id, query, queryEmbedding, cutoff_chapter, 3),
     db.entities.get(character_id),
-    db.characters_extended.get(character_id),
     db.chapters
       .where("work_id").equals(work_id)
       .filter(c => c.chapter_number <= cutoff_chapter)
@@ -286,16 +288,9 @@ export async function buildContext(
 
   const parts: string[] = [];
 
-  // Character info
-  const snapshot = character_version_id && character_version_id !== "base" && characterExt
-    ? characterExt.state_snapshots.find(snap => snap.id === character_version_id)
-    : undefined;
-  const effectivePersona = snapshot?.persona_override ?? characterExt?.persona ?? "";
-  const effectiveSpeechStyle = snapshot?.speech_style_override ?? characterExt?.speech_style;
-
-  if (character) parts.push(`${s.rag_char_section(character.canonical_name)}\n${character.description}`);
-  if (effectivePersona) parts.push(`${s.rag_char_setting}\n${effectivePersona}`);
-  if (effectiveSpeechStyle) parts.push(`${s.rag_speech_style}${effectiveSpeechStyle}`);
+  // Character header only — Entity.description can contain narrator-perspective spoilers
+  // Full persona/speech are already in the chat system prompt
+  if (character) parts.push(s.rag_char_section(character.canonical_name));
 
   // Story context — tiered: recent 3 get full detail, top-3 relevant get ultra summary
   const charChapters = allChapters.filter(c => c.appearing_characters.includes(character_id));
@@ -347,11 +342,28 @@ export async function buildContext(
   }
 
   // Related entities (exclude the character itself)
+  // Characters: name only — descriptions may contain training-data contamination or future-chapter info
+  // Locations/items/orgs/concepts: base description + most recent state snapshot at/before cutoff
   const filteredEntities = relatedEntities.filter(e => e.id !== character_id);
   if (filteredEntities.length > 0) {
-    parts.push(`${s.rag_related_entities}\n` + filteredEntities.map(e =>
-      `- ${e.canonical_name}: ${e.description}`
-    ).join("\n"));
+    const extMap = new Map(
+      (await db.entities_extended.where("id").anyOf(filteredEntities.filter(e => e.type !== "character").map(e => e.id)).toArray())
+        .map(ext => [ext.id, ext])
+    );
+    parts.push(`${s.rag_related_entities}\n` + filteredEntities.map(e => {
+      if (e.type === "character") return `- ${e.canonical_name}`;
+      const ext = extMap.get(e.id);
+      const snap = ext?.state_snapshots
+        .filter(s => s.at_chapter <= cutoff_chapter)
+        .sort((a, b) => b.at_chapter - a.at_chapter)[0];
+      const base = e.description ? `${e.canonical_name}: ${e.description}` : e.canonical_name;
+      if (!snap) return `- ${base}`;
+      const details: string[] = [snap.state_note];
+      if (snap.controller) details.push(`支配: ${snap.controller}`);
+      if (snap.holder) details.push(`所持: ${snap.holder}`);
+      if (snap.status) details.push(snap.status);
+      return `- ${base}（第${snap.at_chapter}章時点: ${details.join("、")}）`;
+    }).join("\n"));
   }
 
   // Text chunks (most valuable — keep all top_k)

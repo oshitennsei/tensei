@@ -24,9 +24,7 @@ function detectLanguage(text: string): Language {
   return "en";
 }
 
-// ── Multi-pass analysis helpers ───────────────────────────────────────────────
-
-type PassType = "single" | "intermediate" | "final";
+// ── Multi-pass / block helpers ────────────────────────────────────────────────
 
 function getBlockSize(contextWindow?: number): number {
   // Reserve ~4000 tokens for prompt + known chars; 1.5 CJK chars per token
@@ -199,7 +197,7 @@ interface RawEventResult {
 
 interface AnalysisResult {
   summaries: { ultra: string; short: string; medium: string };
-  characters: Array<{ name: string; aliases: string[]; description: string; is_main: boolean }>;
+  characters: Array<{ name: string; type?: Entity["type"]; aliases: string[]; description: string; is_main: boolean }>;
   items: string[];
   key_events: string[];
   character_updates?: CharacterUpdate[];
@@ -207,456 +205,191 @@ interface AnalysisResult {
   entity_updates?: RawEntityUpdate[];
 }
 
-function formatKnownChars(entities: Entity[], lang: string): string {
-  if (entities.length === 0) return "";
-  const isChinese = lang === "zh-tw" || lang === "zh-cn" || lang === "zh";
-  const aliasLabel = isChinese ? "別稱" : lang === "ko" ? "별명" : "別名";
-  const descLabel  = isChinese ? "說明" : lang === "ko" ? "설명" : "説明";
-  const chLabel    = isChinese ? "初登場" : lang === "ko" ? "첫등장" : "初登場";
+// ── Phase 1: Entity context building ─────────────────────────────────────────
 
-  const lines = entities.slice(0, 80).map(e => {
-    const aliasPart = e.aliases.length ? `（${aliasLabel}：${e.aliases.join("、")}）` : "";
-    const descPart  = e.description ? `\n  ${descLabel}：${e.description.slice(0, 120)}` : "";
-    const chPart    = e.first_appearance != null ? `  ${chLabel}：第${e.first_appearance}章` : "";
-    return `- ${e.canonical_name}${aliasPart}${chPart}${descPart}`;
-  }).join("\n");
-
-  if (isChinese) {
-    return `\n\n## 已知角色（請勿重複建立）
-以下角色已在系統中登錄。**只有**符合以下嚴格條件時，才能視為同一人，使用相同的 name：
-① 名字完全相同，或只差繁簡字形（乔=喬、瀬=瀨）
-② 文中明確是同一人，只是用了別稱或縮寫（需有明確語境支持）
-③ 是同一外語名的不同語言音譯（如ジョシュア=喬舒亞=Joshua）
-**重要：若本章出現的人物只是姓氏相同，或你不確定是否為同一人，請建立新角色，不要合併。**
-${lines}`;
-  }
-  if (lang === "en") {
-    return `\n\n## Known Characters (do NOT create duplicates)
-Only match a character in this chapter to a known character if you are certain:
-① Name is identical or a clear variant spelling
-② The text explicitly shows it is the same person using a nickname/abbreviation
-③ Same foreign name transliterated differently
-**If a character merely shares a surname or you are unsure, create a new character entry.**
-${lines}`;
-  }
-  if (lang === "ko") {
-    return `\n\n## 기존 등장인물 (중복 생성 금지)
-다음 경우에만 기존 캐릭터로 처리하세요 (확실한 경우만):
-① 이름이 동일하거나 명확한 한자 변형 ② 본문에서 명확히 같은 인물임이 드러나는 경우 ③ 같은 외래어 이름의 다른 표기
-**성씨만 같거나 불확실한 경우 새 캐릭터를 생성하세요.**
-${lines}`;
-  }
-  return `\n\n## 既知のキャラクター（重複作成禁止）
-以下の場合のみ既存キャラクターとして扱ってください（確実な場合のみ）：
-① 名前が同じまたは字体の違い ② 本文から明確に同一人物とわかる場合 ③ 同一外国名の別言語表記
-**苗字が同じなだけ、または不確かな場合は新キャラクターを作成してください。**
-同じ name を使い、別の呼び方は aliases に追加してください。
-${lines}`;
+interface ContextEntity {
+  entity_id: string;
+  canonical_name: string;
+  aliases: string[];
+  type: Entity["type"];
+  first_appearance?: number;
+  latest_status?: string;
 }
 
-// Returns the static system message for analysis — identical per language, maximizes KV cache hits
-function buildAnalysisSystem(lang: string): string {
-  if (lang === "zh-tw" || lang === "zh-cn" || lang === "zh") {
-    const langLabel = lang === "zh-tw" ? "繁體中文" : lang === "zh-cn" ? "简体中文" : "中文";
-    return `你是一位小說分析專家。請只以指定的JSON格式回答，所有摘要及說明請使用${langLabel}，不要有任何其他說明。
-
-請返回以下JSON格式（所有文字請用${langLabel}）:
-{
-  "summaries": {
-    "ultra": "約50字的超短摘要",
-    "short": "約200字的短摘要",
-    "medium": "500~800字的中摘要"
-  },
-  "characters": [
-    {
-      "name": "角色的主要稱呼（不含括號說明或翻譯；與已知角色清單完全一致）",
-      "aliases": ["本段對同一人使用的另一個名字（暱稱、代號、化名、姓名省略形）"],
-      "description": "角色說明（500字以內）",
-      "is_main": false
-    }
-  ],
-  "items": ["重要道具名稱"],
-  "key_events": ["重要事件說明"],
-  "character_updates": [
-    {
-      "name": "角色名稱（與characters中一致）",
-      "state_note": "本段此角色的重要變化或成長（300字以內）",
-      "emotional_state": "本段末尾的情緒狀態",
-      "knowledge_gained": ["本段新獲得的重要認知或資訊"],
-      "relationship_changes": { "其他角色名": "關係變化描述" }
-    }
-  ],
-  "events": [
-    {
-      "what": "事件的簡短名稱（50字以內）",
-      "who": ["涉及的主要角色名稱"],
-      "where": "發生地點",
-      "when": "發生時機（章節內的相對位置）",
-      "why": "原因・動機",
-      "how": "手段・經過",
-      "consequences": ["結果・影響（1〜3項）"],
-      "note": "本章中這個事件的具體描述（300字以內）"
-    }
-  ],
-  "entity_updates": [
-    {
-      "name": "地點或物品的名稱",
-      "type": "location",
-      "state_note": "本章中此地點/物品的狀態變化（300字以內）",
-      "controller": "（地點用）目前控制者・占領者",
-      "holder": "（物品用）目前持有者",
-      "status": "目前狀態概述"
-    }
-  ]
+function fmtCtxEntity(e: ContextEntity): string {
+  const prefix = e.type === "character" ? "[P]" : e.type === "location" ? "[L]" : "[I]";
+  const aliasPart = e.aliases.length > 0 ? `（${e.aliases.slice(0, 3).join("・")}）` : "";
+  const statusPart = e.latest_status ? `: ${e.latest_status.slice(0, 60)}` : "";
+  const chapterPart = e.first_appearance != null ? ` 第${e.first_appearance}章〜` : "";
+  return `${prefix} ${e.canonical_name}${aliasPart}${chapterPart}${statusPart}`;
 }
 
-【aliases 填寫規則 — 非常重要】
-✓ 可以填：暱稱、代號（如「蜈蚣」）、化名、姓名省略（如「悠」是「桐生悠」的省略）
-✗ 嚴格禁止：職稱（教授、主任）、職業描述（資安人員）、人際關係（男友、父親）、括號內翻譯、描述性詞語
-✗ 若某名字可能屬於不同的角色，請各自建立條目，不要合併
+async function buildCandidateEntities(chapter: Chapter): Promise<ContextEntity[]> {
+  const allEntities = await db.entities.where("work_id").equals(chapter.work_id).toArray();
+  const textLower = chapter.full_text.toLowerCase();
 
-【character_updates 填寫規則】
-✓ 列入：有重大事件的角色（重要決定、情感轉折、身份揭露、關係改變、獲得重要資訊）
-✗ 不列入：只是出場、只有日常對話、沒有重大事件的角色
-若本段無重大角色事件，請返回空陣列 []
+  const matched = allEntities.filter(e => {
+    const names = [e.canonical_name, ...e.aliases].filter(n => n.length >= 2);
+    return names.some(n => textLower.includes(n.toLowerCase()));
+  });
 
-【events 填寫規則】
-只記錄以下重大事件（每章最多5件）：
-✓ 人物的死亡・重傷・失蹤
-✓ 重大對決・戰鬥・逮捕
-✓ 秘密的揭露・身份的暴露
-✓ 重要地點的侵入・發現
-✓ 人物關係的決定性轉折（背叛・和解・告白・結盟）
-✗ 日常對話・移動・普通會議不在記錄範圍內
-若本章無重大事件，請返回空陣列 []
+  if (matched.length === 0) return [];
 
-【entity_updates 填寫規則】
-只記錄本章中有明確狀態變化的地點或物品（每章最多5件）：
-✓ 地點的占領・解放・破壞・名稱變更
-✓ 重要物品的轉移・破壞・啟動・封印
-✗ 單純出現、無狀態變化者不列入
-若本章無地點・物品的狀態變化，請返回空陣列 []`;
-  }
+  const charIds = matched.filter(e => e.type === "character").map(e => e.id);
+  const exts = await db.characters_extended.bulkGet(charIds);
+  const extMap = new Map<string, CharacterExtended>();
+  for (const ext of exts) if (ext) extMap.set(ext.id, ext);
 
-  if (lang === "en") {
-    return `You are a literary analyst. Return only the specified JSON format. All summaries and descriptions must be in English.
-
-Return this JSON format (all text in English):
-{
-  "summaries": {
-    "ultra": "~50 char ultra-short summary",
-    "short": "~200 char short summary",
-    "medium": "500-800 char medium summary"
-  },
-  "characters": [
-    {
-      "name": "Character's primary name (no parenthetical explanations; match known characters exactly)",
-      "aliases": ["another name used for this same person in this segment"],
-      "description": "Character description (under 500 words)",
-      "is_main": false
-    }
-  ],
-  "items": ["important item name"],
-  "key_events": ["important event description"],
-  "character_updates": [
-    {
-      "name": "character name (matching characters list)",
-      "state_note": "significant change or growth this segment (under 300 words)",
-      "emotional_state": "emotional state at end of segment",
-      "knowledge_gained": ["important new knowledge gained"],
-      "relationship_changes": { "other character name": "how the relationship changed" }
-    }
-  ],
-  "events": [
-    {
-      "what": "short event label (under 50 words)",
-      "who": ["character names involved"],
-      "where": "location",
-      "when": "timing within the chapter",
-      "why": "cause/motivation",
-      "how": "means/circumstances",
-      "consequences": ["outcomes (1-3 items)"],
-      "note": "concrete description of this event as it appears in this chapter (under 300 words)"
-    }
-  ],
-  "entity_updates": [
-    {
-      "name": "location or item name",
-      "type": "location",
-      "state_note": "how this location/item's state changed in this chapter (under 300 words)",
-      "controller": "(locations) who now controls or occupies it",
-      "holder": "(items) who now possesses it",
-      "status": "current status summary"
-    }
-  ]
+  return matched.map(e => {
+    const ext = extMap.get(e.id);
+    const latestSnap = (ext?.state_snapshots ?? [])
+      .filter(s => s.at_chapter <= chapter.chapter_number)
+      .sort((a, b) => b.at_chapter - a.at_chapter)[0];
+    return {
+      entity_id: e.id,
+      canonical_name: e.canonical_name,
+      aliases: e.aliases,
+      type: e.type,
+      first_appearance: e.first_appearance,
+      latest_status: latestSnap?.label?.slice(0, 60),
+    };
+  });
 }
 
-[aliases rules]
-✓ Include: nicknames, code names, aliases, shortened name forms
-✗ Exclude: titles, job descriptions, relationship labels, parenthetical translations
-✗ If unsure whether a name belongs to the same person, create separate entries
-
-[character_updates rules]
-✓ Include: key decision, emotional shift, identity reveal, relationship change, important revelation
-✗ Exclude: characters who only appear briefly with no significant event
-Return [] if no character has a significant event
-
-[events rules]
-Record only major events (up to 5 per chapter):
-✓ Death, serious injury, disappearance of a character
-✓ Major confrontation, battle, arrest
-✓ Revelation of a secret, exposure of an identity
-✓ Entry into or discovery of an important location
-✓ Decisive turning point in relationships (betrayal, reconciliation, confession, alliance)
-✗ Exclude: casual conversation, travel, routine meetings
-Return [] if no major events occur
-
-[entity_updates rules]
-Record only locations or items with clear state changes in this chapter (up to 5):
-✓ Location captured, liberated, destroyed, renamed
-✓ Important item transferred, destroyed, activated, sealed
-✗ Exclude: locations/items that merely appear without any state change
-Return [] if no location or item changes state`;
-  }
-
-  if (lang === "ko") {
-    return `당신은 소설 분석 전문가입니다. 지정된 JSON 형식만 반환하고 모든 내용은 한국어로 작성하세요.
-
-다음 JSON 형식으로 반환하세요:
-{
-  "summaries": {
-    "ultra": "약 50자 초단 요약",
-    "short": "약 200자 단 요약",
-    "medium": "500~800자 중간 요약"
-  },
-  "characters": [
-    {
-      "name": "공식 전체 이름 (기존 캐릭터와 정확히 일치)",
-      "aliases": ["이 단락에서 사용된 별명, 코드명, 가명"],
-      "description": "캐릭터 설명 (500자 이내)",
-      "is_main": true
-    }
-  ],
-  "items": ["중요 아이템"],
-  "key_events": ["중요 사건"],
-  "character_updates": [
-    {
-      "name": "캐릭터 이름 (characters 목록과 일치)",
-      "state_note": "이 단락에서의 중요한 변화・성장 (300자 이내)",
-      "emotional_state": "이 단락 끝의 감정 상태",
-      "knowledge_gained": ["이 단락에서 얻은 중요한 정보・인식"],
-      "relationship_changes": { "다른 캐릭터 이름": "관계 변화" }
-    }
-  ],
-  "events": [
-    {
-      "what": "사건의 짧은 이름 (50자 이내)",
-      "who": ["관련 주요 캐릭터 이름"],
-      "where": "발생 장소",
-      "when": "발생 타이밍 (챕터 내 상대적 위치)",
-      "why": "원인・동기",
-      "how": "수단・경위",
-      "consequences": ["결과・영향 (1~3개)"],
-      "note": "이 챕터에서 이 사건의 구체적인 묘사 (300자 이내)"
-    }
-  ],
-  "entity_updates": [
-    {
-      "name": "장소 또는 아이템 이름",
-      "type": "location",
-      "state_note": "이 챕터에서 이 장소/아이템의 상태 변화 (300자 이내)",
-      "controller": "(장소) 현재 지배자・점령자",
-      "holder": "(아이템) 현재 소지자",
-      "status": "현재 상태 요약"
-    }
-  ]
+interface Phase1Output {
+  confirmed: ContextEntity[];
+  new_names: string[];
+  alias_matched: Array<{ text_name: string; canonical: string }>;
 }
 
-[character_updates 규칙]
-✓ 기록: 중요한 결정・감정 변화・신원 발각・관계 변화・중요 정보 획득
-✗ 기록 안 함: 등장만・일상 대화만・중대한 이벤트 없음
-중대한 변화가 없는 경우 []
-
-[events 규칙]
-다음에 해당하는 중대한 사건만 기록 (챕터당 최대 5건):
-✓ 인물의 사망・중상・실종
-✓ 중대한 대결・전투・체포
-✓ 비밀의 발각・정체 노출
-✓ 중요한 장소 침입・발견
-✓ 인물 관계의 결정적 전환점 (배신・화해・고백・동맹)
-✗ 일상 대화・이동・통상 회의는 대상 외
-중대한 사건이 없는 경우 []
-
-[entity_updates 규칙]
-이 챕터에서 상태가 명확히 변한 장소・아이템만 기록 (최대 5건):
-✓ 장소의 점령・해방・파괴・개명
-✓ 중요 아이템의 이전・파괴・발동・봉인
-✗ 단순 등장・상태 변화 없음은 제외
-상태 변화가 없는 경우 []`;
-  }
-
-  // Default: Japanese
-  return `あなたは小説分析の専門家です。指定されたJSON形式のみで返答してください。
-
-返すJSONの形式:
-{
-  "summaries": {
-    "ultra": "約50文字の超短要約",
-    "short": "約200文字の短要約",
-    "medium": "500〜800文字の中要約"
-  },
-  "characters": [
-    {
-      "name": "正式名（全名・既知キャラと完全一致させること）",
-      "aliases": ["このブロックで使われた別名・ニックネーム・コードネーム・変装名"],
-      "description": "キャラクターの説明（500文字以内）",
-      "is_main": true
-    }
-  ],
-  "items": ["重要アイテム名"],
-  "key_events": ["重要なイベントの説明"],
-  "character_updates": [
-    {
-      "name": "キャラクター名（charactersリストと一致）",
-      "state_note": "このブロックでのそのキャラの重要な変化・成長（300文字以内）",
-      "emotional_state": "このブロックの終わりの感情状態",
-      "knowledge_gained": ["このブロックで得た重要な情報・認識"],
-      "relationship_changes": { "他キャラ名": "関係の変化" }
-    }
-  ],
-  "events": [
-    {
-      "what": "事件の短い名称（50文字以内）",
-      "who": ["関与する主要キャラ名"],
-      "where": "発生場所",
-      "when": "発生タイミング（章内の相対的な位置）",
-      "why": "原因・動機",
-      "how": "手段・経緯",
-      "consequences": ["結果・影響（1〜3項目）"],
-      "note": "本章でのこの事件の具体的な描写（300文字以内）"
-    }
-  ],
-  "entity_updates": [
-    {
-      "name": "場所またはアイテムの名称",
-      "type": "location",
-      "state_note": "本章でのこの場所・アイテムの状態変化（300文字以内）",
-      "controller": "（場所）現在の支配者・占領者",
-      "holder": "（アイテム）現在の所持者",
-      "status": "現在の状態概要"
-    }
-  ]
-}
-
-【character_updates ルール】
-✓ 記録する：重要な決断・感情の変化・正体の発覚・関係の変化・重要情報の取得
-✗ 記録しない：登場するだけ・日常会話のみ・重大なイベントなし
-重大な変化がない場合は []
-
-【events 抽出ルール】
-以下に該当する重大な事件のみ記録（1章あたり最大5件）：
-✓ 人物の死亡・重傷・行方不明
-✓ 重大な対決・戦闘・逮捕
-✓ 秘密の発覚・正体の露見
-✓ 重要な場所への侵入・発見
-✓ 人物関係の決定的な転換点（裏切り・和解・告白・同盟）
-✗ 日常会話・移動・通常の会議は対象外
-重大な事件がない場合は []
-
-【entity_updates 抽出ルール】
-本章で状態が明確に変化した場所・アイテムのみ記録（最大5件）：
-✓ 場所の占領・解放・破壊・改名
-✓ 重要アイテムの移転・破壊・起動・封印
-✗ 単純な登場・状態変化なしは対象外
-変化がない場合は []`;
-}
-
-// Returns only the variable-content user message — no schema, no rules (those live in system)
-function buildAnalysisUser(
+async function llmPhase1Filter(
   chapter: Chapter,
-  lang: string,
-  knownEntities: Entity[],
+  candidates: ContextEntity[],
+  client: InstanceType<typeof LlmClient>,
+): Promise<Phase1Output> {
+  const textSample = chapter.full_text.slice(0, 4000);
+  const candidateList = candidates.map(fmtCtxEntity).join("\n");
+
+  const system = `You are a literary entity recognition expert. Identify which known entities appear in the chapter, including those referred to by shortened names or aliases. Return JSON only.`;
+  const user = `## Known Entities (in DB)
+${candidateList}
+
+## Chapter text (beginning)
+${textSample}
+
+Return:
+{
+  "confirmed": ["canonical_name"],
+  "alias_matched": [{"text_name": "name used in text", "canonical": "full canonical name from DB"}],
+  "new_names": ["name not matching any known entity"]
+}
+
+Rules:
+- Put in alias_matched if a text name is a surname, given name, shortened form, or common alias of a known entity — use linguistic understanding, not string matching
+- If the same shortened name could refer to two different people (e.g. father and son sharing a surname), include both if context shows both appear
+- Only add to new_names if confident it is genuinely a new entity not in the DB`;
+
+  try {
+    const raw = await client.complete([
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ]);
+    const parsed = extractJson(raw) as {
+      confirmed?: string[];
+      alias_matched?: Array<{ text_name: string; canonical: string }>;
+      new_names?: string[];
+    };
+    const confirmedNames = new Set((parsed.confirmed ?? []).map(n => n.toLowerCase()));
+    for (const am of parsed.alias_matched ?? []) {
+      if (am.canonical) confirmedNames.add(am.canonical.toLowerCase());
+    }
+    const confirmed = candidates.filter(e =>
+      confirmedNames.has(e.canonical_name.toLowerCase()) ||
+      e.aliases.some(a => confirmedNames.has(a.toLowerCase()))
+    );
+    const alias_matched = (parsed.alias_matched ?? []).filter(am => am.text_name && am.canonical);
+    return {
+      confirmed,
+      new_names: (parsed.new_names ?? []).filter(n => n && n.length >= 2),
+      alias_matched,
+    };
+  } catch {
+    return { confirmed: candidates, new_names: [], alias_matched: [] };
+  }
+}
+
+// ── Phase 2: Domain-parallel analysis (single-language prompts) ───────────────
+
+type Domain = "characters" | "events" | "locations_items" | "summary";
+
+function buildDomainSystem(): string {
+  return `You are a literary analyst. Per the task instruction, return only the requested JSON with no explanation. Output all text values (summaries, descriptions, notes, labels) in the SAME language as the input novel text.`;
+}
+
+function buildDomainUserPrefix(
+  chapter: Chapter,
+  confirmedEntities: ContextEntity[],
+  newEntityNames: string[],
   blockText: string,
-  passType: PassType,
-  accumulatedEvents: string[],
 ): string {
-  const knownBlock = formatKnownChars(knownEntities, lang);
-  const isIntermediate = passType === "intermediate";
-  const isFinal = passType === "final";
-  const isChinese = lang === "zh-tw" || lang === "zh-cn" || lang === "zh";
-  const isEn = lang === "en";
-  const isKo = lang === "ko";
-
-  if (isChinese) {
-    const intermediateNote = isIntermediate
-      ? "\n【注意】這是多段解析的中間段，請勿生成 summaries，只提取人物與事件。"
-      : isFinal
-        ? "\n【注意】這是最終段，請生成涵蓋全章的 summaries。"
-        : "";
-    const accEventsBlock = isFinal && accumulatedEvents.length > 0
-      ? `\n\n【前段已發現的事件 — 請在全章摘要中涵蓋這些內容】\n${accumulatedEvents.map(e => `- ${e}`).join("\n")}`
-      : "";
-    return `請分析以下小說章節段落，返回JSON格式結果。${knownBlock}${intermediateNote}${accEventsBlock}\n\n章節標題: ${chapter.title}\n內文:\n${blockText}`;
-  }
-
-  if (isEn) {
-    const intermediateNote = isIntermediate
-      ? "\n[Note] This is an intermediate segment. Do NOT generate summaries. Only extract characters and events."
-      : isFinal
-        ? "\n[Note] This is the final segment. Generate summaries covering the entire chapter."
-        : "";
-    const accEventsBlock = isFinal && accumulatedEvents.length > 0
-      ? `\n\n[Events found in earlier segments — include these in the chapter summary]\n${accumulatedEvents.map(e => `- ${e}`).join("\n")}`
-      : "";
-    return `Analyze the following novel chapter segment and return a JSON result.${knownBlock}${intermediateNote}${accEventsBlock}\n\nChapter title: ${chapter.title}\nText:\n${blockText}`;
-  }
-
-  if (isKo) {
-    const intermediateNote = isIntermediate
-      ? "\n[참고] 중간 단락입니다. summaries 없이 인물과 이벤트만 추출하세요."
-      : isFinal
-        ? "\n[참고] 마지막 단락입니다. 전체 챕터를 아우르는 summaries를 생성하세요."
-        : "";
-    const accEventsBlock = isFinal && accumulatedEvents.length > 0
-      ? `\n\n[이전 단락에서 발견된 이벤트 — 챕터 요약에 포함하세요]\n${accumulatedEvents.map(e => `- ${e}`).join("\n")}`
-      : "";
-    return `다음 소설 챕터를 분석하고 JSON 결과를 반환하세요.${knownBlock}${intermediateNote}${accEventsBlock}\n\n챕터 제목: ${chapter.title}\n본문:\n${blockText}`;
-  }
-
-  // Default: Japanese
-  const intermediateNote = isIntermediate
-    ? "\n【注意】これは分割解析の中間ブロックです。summaries は生成しないでください。キャラクターとイベントの抽出のみ行ってください。"
-    : isFinal
-      ? "\n【注意】これは最終ブロックです。章全体を網羅する summaries を生成してください。"
-      : "";
-  const accEventsBlock = isFinal && accumulatedEvents.length > 0
-    ? `\n\n【前のブロックで発見されたイベント — 章全体の要約にこれらを含めること】\n${accumulatedEvents.map(e => `- ${e}`).join("\n")}`
+  const knownSection = confirmedEntities.length > 0
+    ? `## Known Entities\n${confirmedEntities.map(fmtCtxEntity).join("\n")}`
     : "";
-  return `以下の小説の章（またはブロック）を分析し、必ずJSON形式のみで返してください。余計な説明は不要です。${knownBlock}${intermediateNote}${accEventsBlock}\n\n章タイトル: ${chapter.title}\n本文:\n${blockText}`;
+  const newSection = newEntityNames.length > 0
+    ? `## New Entities\n${newEntityNames.join(", ")}`
+    : "";
+  const chapterHeader = `## Chapter ${chapter.chapter_number}: ${chapter.title}`;
+  return [knownSection, newSection, chapterHeader, blockText].filter(Boolean).join("\n\n");
 }
 
-function buildAnalysisPrompt(
-  chapter: Chapter,
-  lang: string,
-  knownEntities: Entity[],
-  blockText: string,
-  passType: PassType = "single",
-  accumulatedEvents: string[] = [],
-): { system: string; user: string } {
-  return {
-    system: buildAnalysisSystem(lang),
-    user: buildAnalysisUser(chapter, lang, knownEntities, blockText, passType, accumulatedEvents),
-  };
-}
+function buildDomainTask(domain: Domain, isFinalBlock: boolean, accEventLabels: string[]): string {
+  const accEventsBlock = domain === "summary" && isFinalBlock && accEventLabels.length > 0
+    ? `\n\nEvents identified in earlier blocks:\n${accEventLabels.map(e => `- ${e}`).join("\n")}`
+    : "";
 
-// Filter known entities to only those relevant to this chapter, reducing prompt size
-function filterRelevantKnownEntities(entities: Entity[], chapter: Chapter, window = 20): Entity[] {
-  if (entities.length <= 30) return entities;
-  const filtered = entities.filter(e =>
-    e.key_appearances.some(n => n >= chapter.chapter_number - window) ||
-    e.key_appearances.length >= 3
-  );
-  return filtered.slice(0, 80);
+  switch (domain) {
+    case "characters":
+      return `\n\n## Task: New Entities & Character Updates
+
+NEW entities (those in "New Entities" or not present in "Known Entities"):
+- Output a full entry. Set "type" to: "character", "organization", "location", or "item".
+- In "aliases", include ALL ways this entity may be referred to: surname alone, given name alone, shortened forms, nicknames, common informal references. Use your linguistic understanding of the name — do NOT rely on punctuation or length.
+- Do NOT create entities for titles or roles (Admiral, Professor, Commander, etc.). A title-based reference to a known entity should appear in character_updates, not as a new entity.
+
+KNOWN entities (in "Known Entities"):
+- Output character_updates only. state_note ≤200 words. No re-description.
+
+{"characters":[{"name":"canonical full name","type":"character","aliases":["surname","given name","nickname",...],"description":"≤300 words","is_main":false}],
+ "character_updates":[{"name":"canonical name from Known Entities","state_note":"≤200 words","emotional_state":"...","knowledge_gained":[...],"relationship_changes":{"name":"..."}}]}
+
+Return characters:[] if no new entities. Return character_updates:[] if no significant changes.`;
+
+    case "events":
+      return `\n\n## Task: Major Events
+Record only major plot events (up to 5): deaths/injuries, battles, secret reveals, betrayals/alliances, decisive turning points.
+Exclude: casual conversation, travel, routine meetings.
+
+{"events":[{"what":"≤50-char label","who":["character names"],"where":"location","when":"relative timing in chapter","why":"cause/motivation","how":"means/circumstances","consequences":["1-3 outcomes"],"note":"concrete description ≤200 words"}]}
+
+Return {"events":[]} if no major events.`;
+
+    case "locations_items":
+      return `\n\n## Task: Locations & Items
+(1) List names of important items/objects newly introduced or prominently featured in this chapter.
+(2) For any location or item in "Known Entities" (or mentioned in the text) that undergoes a clear state change — captured, destroyed, transferred, renamed, activated, sealed, broken, stolen, recovered, etc. — record it in entity_updates. Use the exact canonical name from "Known Entities" if it matches, otherwise use the name as it appears in the text.
+
+{"items":["item name"],
+ "entity_updates":[{"name":"exact name from Known Entities or text","type":"item","state_note":"≤200 chars: what changed and who caused it","controller":"who controls/occupies (locations only)","holder":"who now possesses it (items only)","status":"current state summary"}]}
+
+Return empty arrays if nothing notable.`;
+
+    case "summary":
+      if (!isFinalBlock) return "";
+      return `\n\n## Task: Chapter Summary${accEventsBlock}
+Write summaries covering the ENTIRE chapter (not just this final segment).
+
+{"summaries":{"ultra":"~50 chars: one-line gist","short":"~200 chars: key plot beats","medium":"500-800 chars: full chapter overview"},"key_events":["brief label for each major event"]}`;
+  }
 }
 
 // Thrown when a chapter fails all retries — signals the batch to stop immediately.
@@ -671,36 +404,37 @@ export class AnalysisFatalError extends Error {
 
 const MAX_ANALYSIS_RETRIES = 3;
 
-// Single LLM call for one block of text — retries up to MAX_ANALYSIS_RETRIES times.
-// Throws AnalysisFatalError after all retries are exhausted.
-async function llmAnalyzeBlock(
-  chapter: Chapter,
-  lang: string,
-  knownEntities: Entity[],
-  blockText: string,
-  passType: PassType,
-  accumulatedEvents: string[],
+// Single domain LLM call — retries up to MAX_ANALYSIS_RETRIES times.
+async function llmDomainCall(
+  sharedSystem: string,
+  sharedPrefix: string,
+  domain: Domain,
+  isFinalBlock: boolean,
+  accEventLabels: string[],
   client: InstanceType<typeof LlmClient>,
+  chapterTitle: string,
 ): Promise<Partial<AnalysisResult>> {
-  const { system, user } = buildAnalysisPrompt(
-    chapter, lang, knownEntities, blockText, passType, accumulatedEvents,
-  );
+  const task = buildDomainTask(domain, isFinalBlock, accEventLabels);
+  if (!task) return {};
+
+  const userMsg = sharedPrefix + task;
   let lastError: unknown;
+
   for (let attempt = 1; attempt <= MAX_ANALYSIS_RETRIES; attempt++) {
     try {
       const raw = await client.complete([
-        { role: "system", content: system },
-        { role: "user", content: user },
+        { role: "system", content: sharedSystem },
+        { role: "user", content: userMsg },
       ]);
       return extractJson(raw) as Partial<AnalysisResult>;
     } catch (e) {
       lastError = e;
       if (attempt < MAX_ANALYSIS_RETRIES) {
-        await new Promise(r => setTimeout(r, 1000 * attempt)); // 1s → 2s backoff
+        await new Promise(r => setTimeout(r, 1000 * attempt));
       }
     }
   }
-  throw new AnalysisFatalError(chapter.title, lastError);
+  throw new AnalysisFatalError(chapterTitle, lastError);
 }
 
 async function llmAnalyze(
@@ -713,45 +447,86 @@ async function llmAnalyze(
   ]);
   if (!client) return null;
 
-  const [work, allKnownEntities] = await Promise.all([
-    db.works.get(chapter.work_id),
-    db.entities.where("work_id").equals(chapter.work_id).filter(e => e.type === "character").toArray(),
-  ]);
   const detected = detectLanguage(chapter.full_text);
+  const work = await db.works.get(chapter.work_id);
   if (work && work.language !== detected) {
     await db.works.update(work.id, { language: detected });
   }
-  const lang = detected;
 
-  // Filter to entities whose names actually appear in this chapter's text.
-  // This replaces the heuristic window approach — for a 100-character novel only
-  // the 10-15 entities appearing in this chapter are passed, not all 100.
-  const textLower = chapter.full_text.toLowerCase();
-  const knownEntities = allKnownEntities
-    .filter(e => [e.canonical_name, ...e.aliases].some(n => n.length >= 2 && textLower.includes(n.toLowerCase())))
-    .slice(0, 80);
-  const blockSize = getBlockSize(model?.context_window);
-  const blocks = splitIntoBlocks(chapter.full_text, blockSize);
+  // Phase 1: text-match candidates, then LLM disambiguation for characters only.
+  // Non-character entities (locations/items/orgs) use text-match directly — they lack
+  // the alias ambiguity that makes LLM confirmation necessary for characters, and
+  // LLM phase 1 uses only the first 4000 chars which misses later-chapter state changes.
+  const candidates = await buildCandidateEntities(chapter);
+  const charCandidates = candidates.filter(e => e.type === "character");
+  const nonCharCandidates = candidates.filter(e => e.type !== "character");
 
-  if (blocks.length === 1) {
-    // AnalysisFatalError propagates up naturally
-    const result = await llmAnalyzeBlock(chapter, lang, knownEntities, blocks[0], "single", [], client);
-    return result as AnalysisResult;
+  const phase1 = charCandidates.length > 5
+    ? await llmPhase1Filter(chapter, charCandidates, client)
+    : { confirmed: charCandidates, new_names: [], alias_matched: [] };
+  const { confirmed: confirmedChars, new_names: newEntityNames, alias_matched } = phase1;
+
+  // Merge: LLM-confirmed characters + all text-matched non-characters
+  const seenInPhase1 = new Set(confirmedChars.map(e => e.entity_id));
+  const confirmedEntities = [
+    ...confirmedChars,
+    ...nonCharCandidates.filter(e => !seenInPhase1.has(e.entity_id)),
+  ];
+
+  // Build map: canonical → new alias text_names to propagate to analyzeChapter
+  const aliasAdditions = new Map<string, string[]>();
+  for (const am of alias_matched) {
+    const key = am.canonical.toLowerCase();
+    if (!aliasAdditions.has(key)) aliasAdditions.set(key, []);
+    aliasAdditions.get(key)!.push(am.text_name);
   }
 
-  // Multi-pass: accumulate across blocks
-  // AnalysisFatalError from any block propagates up — batch must stop
-  let acc: AccumulatedAnalysis = { characters: [], items: [], key_events: [], character_updates: [], events: [], entity_updates: [] };
+  // Phase 2: parallel domain sessions per block
+  const blockSize = getBlockSize(model?.context_window);
+  const blocks = splitIntoBlocks(chapter.full_text, blockSize);
+  const sharedSystem = buildDomainSystem();
+
+  let acc: AccumulatedAnalysis = {
+    characters: [], items: [], key_events: [],
+    character_updates: [], events: [], entity_updates: [],
+  };
   let lastSummaries: AnalysisResult["summaries"] = { ultra: "", short: "", medium: "" };
 
   for (let i = 0; i < blocks.length; i++) {
     onBlockProgress?.(i + 1, blocks.length);
-    const passType: PassType = i === blocks.length - 1 ? "final" : "intermediate";
-    const result = await llmAnalyzeBlock(
-      chapter, lang, knownEntities, blocks[i], passType, acc.key_events, client,
+    const isFinalBlock = i === blocks.length - 1;
+    const sharedPrefix = buildDomainUserPrefix(chapter, confirmedEntities, newEntityNames, blocks[i]);
+    const domains: Domain[] = isFinalBlock
+      ? ["characters", "events", "locations_items", "summary"]
+      : ["characters", "events", "locations_items"];
+
+    const accEventLabels = acc.events.map(e => e.what).filter(Boolean);
+
+    // AnalysisFatalError from any domain propagates — batch stops immediately
+    const results = await Promise.all(
+      domains.map(d => llmDomainCall(
+        sharedSystem, sharedPrefix, d,
+        isFinalBlock, accEventLabels, client, chapter.title,
+      ))
     );
-    acc = mergeAccumulated(acc, result);
-    if (passType === "final" && result.summaries) lastSummaries = result.summaries;
+
+    const blockResult: Partial<AnalysisResult> = Object.assign({}, ...results);
+    acc = mergeAccumulated(acc, blockResult);
+    if (isFinalBlock && blockResult.summaries) lastSummaries = blockResult.summaries;
+  }
+
+  if (acc.key_events.length === 0 && acc.events.length > 0) {
+    acc.key_events = acc.events.map(e => e.what).filter(Boolean);
+  }
+
+  // Add confirmed known entities as stubs so analyzeChapter() tracks appearances.
+  // Include any alias_matched text_names so analyzeChapter() registers them as new aliases.
+  const resultCharNames = new Set(acc.characters.map(c => c.name.toLowerCase()));
+  for (const e of confirmedEntities) {
+    if (e.type === "character" && !resultCharNames.has(e.canonical_name.toLowerCase())) {
+      const newAliases = aliasAdditions.get(e.canonical_name.toLowerCase()) ?? [];
+      acc.characters.push({ name: e.canonical_name, aliases: newAliases, description: "", is_main: false });
+    }
   }
 
   return {
@@ -1084,7 +859,7 @@ export async function analyzeChapter(
       entity = {
         id: crypto.randomUUID(),
         work_id: chapter.work_id,
-        type: "character",
+        type: char.type ?? "character",
         canonical_name: char.name,
         aliases: char.aliases ?? [],
         description: char.description ?? "",
@@ -1323,8 +1098,19 @@ export async function analyzeChapter(
   // Process entity state updates (location / item arcs)
   for (const update of result.entity_updates ?? []) {
     if (!update.name || !update.state_note) continue;
-    const entity = entityByKey.get(update.name.toLowerCase());
-    if (!entity || (entity.type !== "location" && entity.type !== "item")) continue;
+    const nameLower = update.name.toLowerCase();
+    // Try exact match first, then substring fallback for partial names from LLM
+    let entity = entityByKey.get(nameLower);
+    if (!entity) {
+      for (const [key, e] of entityByKey) {
+        if ((e.type === "location" || e.type === "item" || e.type === "organization") &&
+            (key.includes(nameLower) || nameLower.includes(key))) {
+          entity = e;
+          break;
+        }
+      }
+    }
+    if (!entity || (entity.type !== "location" && entity.type !== "item" && entity.type !== "organization")) continue;
 
     let ext: EntityExtended | undefined = await db.entities_extended.get(entity.id);
     if (!ext) {

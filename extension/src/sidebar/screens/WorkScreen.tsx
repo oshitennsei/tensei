@@ -18,12 +18,14 @@ interface Props {
   onSelectSession: (session: Session) => void;
   onNewChat: () => void;
   onManageCharacters: () => void;
+  onManageEntities: () => void;
+  onManageEvents: () => void;
   onWorkDeleted: () => void;
   onPerformance: () => void;
   onResumePerformance: (session: PerformanceSession) => void;
 }
 
-export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageCharacters, onWorkDeleted, onPerformance, onResumePerformance }: Props) {
+export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageCharacters, onManageEntities, onManageEvents, onWorkDeleted, onPerformance, onResumePerformance }: Props) {
   const str = useStrings();
   const { loadBackground } = useBackground();
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -377,6 +379,12 @@ export function WorkScreen({ work, onBack, onSelectSession, onNewChat, onManageC
           </Button>
           <Button variant="ghost" className="w-full" onClick={onManageCharacters}>
             {str.work_manage_chars}
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={onManageEntities}>
+            {str.work_manage_entities}
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={onManageEvents}>
+            {str.work_manage_events}
           </Button>
           {work.portal_work_id && (
             <>
